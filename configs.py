@@ -155,7 +155,9 @@ GRAPH_LAPLACIAN_UNIFORM_TEST.data_config.dist = 'uniform_laplacian'
 
 FINITE_ELEMENT_TEST = Config()
 FINITE_ELEMENT_TEST.data_config.block_periodic = False
+FINITE_ELEMENT_TEST.test_config.load_data = False
 FINITE_ELEMENT_TEST.data_config.dist = 'finite_element'
+
 
 # should replicate results from "Compatible Relaxation and Coarsening in Algebraic Multigrid" (2009)
 CR_TEST = Config()

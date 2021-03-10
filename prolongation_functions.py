@@ -3,6 +3,7 @@ from scipy.sparse import csr_matrix
 
 from model import csrs_to_graphs_tuple, graphs_tuple_to_sparse_tensor, to_prolongation_matrix_csr
 from tf_sparse_utils import sparse_tensor_to_csr
+from utils import get_gpu_device
 
 
 def graphs_tuple_to_csr(graphs_tuple):
@@ -16,7 +17,7 @@ def graphs_tuple_to_csr(graphs_tuple):
 
 def model(A, coarse_nodes, baseline_P, C, graph_model, matlab_engine=None, normalize_rows_by_node=False,
           edge_indicators=True, node_indicators=True):
-    with tf.device(":/gpu:0"):
+    with tf.device(get_gpu_device()):
         graphs_tuple = csrs_to_graphs_tuple([A], matlab_engine, coarse_nodes_list=[coarse_nodes],
                                             baseline_P_list=[baseline_P],
                                             edge_indicators=edge_indicators,

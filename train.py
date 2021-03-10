@@ -383,6 +383,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_EVAL', se
                                eval_dataset, eval_A_graphs_tuple, eval_config,
                                matlab_engine)
         checkpoint.save(file_prefix=checkpoint_prefix)
+        writer.flush()
 
     if config.train_config.coarsen:
         old_model = clone_model(model, config.model_config, config.run_config, matlab_engine)
@@ -412,6 +413,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_EVAL', se
                                    eval_dataset, eval_A_graphs_tuple, eval_config,
                                    matlab_engine)
             checkpoint.save(file_prefix=checkpoint_prefix)
+    writer.flush()
 
 
 if __name__ == '__main__':

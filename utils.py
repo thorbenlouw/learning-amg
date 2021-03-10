@@ -45,5 +45,12 @@ def write_config_file(run_name, config, seed):
 
 @lru_cache(maxsize=None)
 def tril_indices(grid_size):
+    # tril_indices returns the indices of the lower-triangular elemss in a grid_size x grid_size matrix
     """Cached version of np.tril_indices used for creating relaxation matrices"""
     return np.tril_indices(grid_size)
+
+
+def get_gpu_device():
+    # For now, hack to CPU
+    return ":/cpu:0"
+    # normally return ":/gpu:0"

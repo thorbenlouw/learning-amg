@@ -19,10 +19,19 @@ from model import csrs_to_graphs_tuple, create_model, graphs_tuple_to_sparse_mat
 from multigrid_utils import block_diagonalize_A_single, block_diagonalize_P, two_grid_error_matrices, frob_norm, \
     two_grid_error_matrix, compute_coarse_A
 from relaxation import relaxation_matrices
-from utils import create_results_dir, write_config_file, most_frequent_splitting, chunks
+from utils import create_results_dir, write_config_file, most_frequent_splitting, chunks, get_gpu_device
+
+
+
+def create_data_dir_if_not_exist():
+    try:
+        os.mkdir("data_dir")
+    except FileExistsError:
+        pass
 
 
 def create_dataset(num_As, data_config, run=0, matlab_engine=None):
+    create_data_dir_if_not_exist()
     if data_config.load_data:
         As_filename = f"data_dir/periodic_delaunay_num_As_{num_As}_num_points_{data_config.num_unknowns}" \
             f"_rnb_{data_config.root_num_blocks}_epoch_{run}.npy"
@@ -179,7 +188,7 @@ def train_run(run_dataset, run, batch_size, config,
                                                     edge_indicators=config.run_config.edge_indicators)
 
         with tf.GradientTape() as tape:
-            with tf.device('/gpu:0'):
+            with tf.device(get_gpu_device()):
                 batch_P_graphs_tuple = model(batch_A_graphs_tuple)
             frob_loss, M = loss(batch_dataset, batch_A_graphs_tuple, batch_P_graphs_tuple,
                                 config.run_config, config.train_config, config.data_config)
@@ -210,7 +219,7 @@ def record_tb_loss(frob_loss):
 
 def record_tb_params(batch_size, grads, loop, variables):
     with tf.contrib.summary.record_summaries_every_n_global_steps(1):
-        if loop.avg_time is not None:
+        if hasattr(loop, 'avg_time') and loop.avg_time is not None:
             tf.contrib.summary.scalar('seconds_per_batch', tf.convert_to_tensor(loop.avg_time))
 
         for i in range(len(variables)):
@@ -230,7 +239,7 @@ def record_tb_spectral_radius(M, model, eval_dataset, eval_A_graphs_tuple, eval_
         spectral_radius = np.abs(np.linalg.eigvals(M.numpy())).max()
         tf.contrib.summary.scalar('spectral_radius', spectral_radius)
 
-        with tf.device('/gpu:0'):
+        with tf.device(get_gpu_device()):
             eval_P_graphs_tuple = model(eval_A_graphs_tuple)
         eval_loss, eval_M = loss(eval_dataset, eval_A_graphs_tuple, eval_P_graphs_tuple,
                                  eval_config.run_config,

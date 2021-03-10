@@ -1,7 +1,7 @@
 class DataConfig:
     def __init__(self, dist='lognormal_laplacian_periodic', block_periodic=True,
                  num_unknowns=8 ** 2, root_num_blocks=4, splitting='CLJP', add_diag=False,
-                 load_data=True, save_data=False):
+                 load_data=False, save_data=True):  # For first run we have no data! So we had to switch load_data and save_data True/False?
         self.dist = dist  # see function 'generate_A()' for possible distributions
         self.block_periodic = block_periodic
         self.num_unknowns = num_unknowns

@@ -6,7 +6,7 @@ from scipy.sparse import csr_matrix
 
 from data import As_poisson_grid
 from graph_net_model import EncodeProcessDecodeNonRecurrent
-
+from utils import get_gpu_device
 
 def get_model(model_name, model_config, run_config, matlab_engine, train=False, train_config=None):
     dummy_input = As_poisson_grid(1, 7 ** 2)[0]
@@ -54,7 +54,7 @@ def load_model(checkpoint_dir, dummy_input, model_config, run_config, matlab_eng
 
 
 def create_model(model_config):
-    with tf.device('/gpu:0'):
+    with tf.device(get_gpu_device()):
         return EncodeProcessDecodeNonRecurrent(num_cores=model_config.mp_rounds, edge_output_size=1,
                                                node_output_size=1, global_block=model_config.global_block,
                                                latent_size=model_config.latent_size,
@@ -144,10 +144,10 @@ def csrs_to_graphs_tuple(csrs, matlab_engine, node_feature_size=128, coarse_node
 
 def P_square_sparsity_pattern(P, size, coarse_nodes, matlab_engine):
     P_coo = P.tocoo()
-    P_rows = matlab.double((P_coo.row + 1))
-    P_cols = matlab.double((P_coo.col + 1))
-    P_values = matlab.double(P_coo.data)
-    coarse_nodes = matlab.double((coarse_nodes + 1))
+    P_rows = matlab.double((P_coo.row + 1).tolist())  # Matlab complaning that it needs to be a rect shape
+    P_cols = matlab.double((P_coo.col + 1).tolist())
+    P_values = matlab.double(P_coo.data.tolist())
+    coarse_nodes = matlab.double((coarse_nodes + 1).tolist())
     rows, cols = matlab_engine.square_P(P_rows, P_cols, P_values, size, coarse_nodes,  nargout=2)
     rows = np.array(rows._data).reshape(rows.size, order='F') - 1
     cols = np.array(cols._data).reshape(cols.size, order='F') - 1

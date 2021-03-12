@@ -1,14 +1,13 @@
 from functools import lru_cache
 
-import matlab.engine
 import numpy as np
 import pyamg
 import scipy.linalg
 import tensorflow as tf
 from pyamg.classical import direct_interpolation
 from scipy.sparse import csr_matrix
-
-from utils import chunks, most_frequent_splitting
+from oct2py import octave
+from utils import chunks, most_frequent_splitting, generate_delaunay_triangulation, init_octave
 
 
 def frob_norm(a, power=1):
@@ -191,7 +190,7 @@ def block_diagonalize_P(P, root_num_blocks, coarse_nodes):
     blocks = extract_diag_blocks(block_diag_full_P, small_block_size, root_num_blocks, single_matrix=True)
     blocks = blocks[1:]  # ignore zero mode block
 
-    block_coarse_nodes = coarse_nodes[:len(coarse_nodes) // root_num_blocks**2]
+    block_coarse_nodes = coarse_nodes[:len(coarse_nodes) // root_num_blocks ** 2]
     blocks = [tf.gather(block, block_coarse_nodes, axis=1) for block in blocks]
 
     return blocks
@@ -260,21 +259,19 @@ def test_create_W_matrix():
     print(np.all(np.isclose(I, np.eye(3 * 4))))
 
 
+def generate_A_delaunay_block_periodic_lognormal(num_unknowns_per_block, root_num_blocks):
+    """Poisson equation on triangular mesh, with lognormal coefficients, and block periodic boundary conditions"""
+    # points are correct only for 3x3 number of blocks
+    tri = generate_delaunay_triangulation(num_unknowns_per_block)
+    connectivity_list = tri.simplices + 1
+    A = octave.computeBlockPeriodicGraphLaplacian(connectivity_list, num_unknowns_per_block, root_num_blocks)
+    return csr_matrix(A), tri.points
+
+
 def test_block_diagonalize_1d_circulant():
     """Check if eigenvalues of block matrices are the same as eigenvalues of original block-circulant matrix"""
-    matlab_engine = matlab.engine.start_matlab()
-    matlab_engine.eval('rng(1)')  # fix random seed for reproducibility
-
-    def generate_A_delaunay_block_periodic_lognormal(num_unknowns_per_block, root_num_blocks, matlab_engine):
-        """Poisson equation on triangular mesh, with lognormal coefficients, and block periodic boundary conditions"""
-        # points are correct only for 3x3 number of blocks
-        A_matlab, points_matlab = matlab_engine.block_periodic_delaunay(num_unknowns_per_block, root_num_blocks,
-                                                                        nargout=2)
-        A_numpy = np.array(A_matlab._data).reshape(A_matlab.size, order='F')
-        points_numpy = np.array(points_matlab._data).reshape(points_matlab.size, order='F')
-        return csr_matrix(A_numpy), points_numpy
-
-    A, _ = generate_A_delaunay_block_periodic_lognormal(3, 4, matlab_engine)
+    init_octave(1)
+    A, _ = generate_A_delaunay_block_periodic_lognormal(3, 4)
     A = A.toarray()
     blocks = block_diagonalize_1d_circulant(A, 4)
     A_eigs = np.sort(np.linalg.eigvals(A))
@@ -284,19 +281,9 @@ def test_block_diagonalize_1d_circulant():
 
 def test_block_diagonalize_A():
     """Check if eigenvalues of block matrices are the same as eigenvalues of original block-circulant matrix"""
-    matlab_engine = matlab.engine.start_matlab()
-    matlab_engine.eval('rng(1)')  # fix random seed for reproducibility
+    init_octave(1)
 
-    def generate_A_delaunay_block_periodic_lognormal(num_unknowns_per_block, root_num_blocks, matlab_engine):
-        """Poisson equation on triangular mesh, with lognormal coefficients, and block periodic boundary conditions"""
-        # points are correct only for 3x3 number of blocks
-        A_matlab, points_matlab = matlab_engine.block_periodic_delaunay(num_unknowns_per_block, root_num_blocks,
-                                                                        nargout=2)
-        A_numpy = np.array(A_matlab._data).reshape(A_matlab.size, order='F')
-        points_numpy = np.array(points_matlab._data).reshape(points_matlab.size, order='F')
-        return csr_matrix(A_numpy), points_numpy
-
-    A, _ = generate_A_delaunay_block_periodic_lognormal(15, 4, matlab_engine)
+    A, _ = generate_A_delaunay_block_periodic_lognormal(15, 4)
     A = A.toarray()
     blocks = block_diagonalize_A(A, 4)
 
@@ -308,19 +295,10 @@ def test_block_diagonalize_A():
 
 def test_block_diagonalize_A_fast():
     """Check if eigenvalues of block matrices are the same as eigenvalues of original block-circulant matrix"""
-    matlab_engine = matlab.engine.start_matlab()
-    matlab_engine.eval('rng(1)')  # fix random seed for reproducibility
-
-    def generate_A_delaunay_block_periodic_lognormal(num_unknowns_per_block, root_num_blocks, matlab_engine):
-        """Poisson equation on triangular mesh, with lognormal coefficients, and block periodic boundary conditions"""
-        # points are correct only for 3x3 number of blocks
-        A_matlab = matlab_engine.block_periodic_delaunay(num_unknowns_per_block, root_num_blocks,
-                                                                        nargout=1)
-        A_numpy = np.array(A_matlab._data).reshape(A_matlab.size, order='F')
-        return csr_matrix(A_numpy)
+    init_octave(1)
 
     batch_size = 32
-    As = [generate_A_delaunay_block_periodic_lognormal(5, 3, matlab_engine) for i in range(batch_size)]
+    As = [generate_A_delaunay_block_periodic_lognormal(5, 3)[0] for i in range(batch_size)]
     As = [A.toarray() for A in As]
     As = tf.stack(As)
     As = tf.cast(As, dtype=tf.complex128)
@@ -334,20 +312,11 @@ def test_block_diagonalize_A_fast():
 
 def test_block_diagonalize_P():
     """Check if eigenvalues of block matrices are the same as eigenvalues of original block-circulant matrix"""
-    matlab_engine = matlab.engine.start_matlab()
-    matlab_engine.eval('rng(1)')  # fix random seed for reproducibility
-
-    def generate_A_delaunay_block_periodic_lognormal(num_unknowns_per_block, root_num_blocks, matlab_engine):
-        """Poisson equation on triangular mesh, with lognormal coefficients, and block periodic boundary conditions"""
-        # points are correct only for 3x3 number of blocks
-        A_matlab = matlab_engine.block_periodic_delaunay(num_unknowns_per_block, root_num_blocks,
-                                                                        nargout=1)
-        A_numpy = np.array(A_matlab._data).reshape(A_matlab.size, order='F')
-        return csr_matrix(A_numpy)
+    init_octave(1)
 
     num_unknowns_per_block = 64
     root_num_blocks = 3
-    A = generate_A_delaunay_block_periodic_lognormal(num_unknowns_per_block, root_num_blocks, matlab_engine)
+    A, _ = generate_A_delaunay_block_periodic_lognormal(num_unknowns_per_block, root_num_blocks)
     # A = A + 0.1 * scipy.sparse.diags(np.ones(num_unknowns_per_block * root_num_blocks**2))
 
     orig_solver = pyamg.ruge_stuben_solver(A, max_levels=2, max_coarse=1, CF='CLJP', keep=True)
@@ -414,13 +383,11 @@ def test_block_diagonalize_P():
     # # extract only elements that correspond to coarse nodes
     # A_c_blocks = A_c_blocks[:, common_block_splitting.nonzero()[0][:, None], common_block_splitting.nonzero()[0]]
 
-
     A_c_block_eigs = np.sort(np.linalg.eigvals(A_c_blocks).flatten())
     A_c_eigs = np.sort(np.linalg.eigvals(A_c))
 
     C_block_eigs = np.sort(np.linalg.eigvals(C_blocks).flatten())
     C_eigs = np.sort(np.linalg.eigvals(C))
-
 
     M_block_eigs = np.sort(np.linalg.eigvals(M_blocks).flatten())
     M_eigs = np.sort(np.linalg.eigvals(M))

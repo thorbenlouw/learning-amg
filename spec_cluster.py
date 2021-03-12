@@ -6,25 +6,23 @@ import numpy as np
 import tensorflow as tf
 from scipy.sparse.linalg import lobpcg
 from tqdm import tqdm
-import matlab.engine
 
 import configs
 from data import generate_A_spec_cluster
 from model import get_model
 from prolongation_functions import model, baseline
 from ruge_stuben_custom_solver import ruge_stuben_custom_solver
-
+from utils import oct2py
 
 def precond_test(model_name=None, test_config='GRAPH_LAPLACIAN_TEST', seed=1):
     if model_name is None:
         raise RuntimeError("model name required")
     model_name = str(model_name)
-    matlab_engine = matlab.engine.start_matlab()
 
     # fix random seeds for reproducibility
     np.random.seed(seed)
     tf.random.set_random_seed(seed)
-    matlab_engine.eval(f'rng({seed})')
+    octave = init_octave(seed)
 
     test_config = getattr(configs, test_config).test_config
     config_file = f"results/{model_name}/config.json"
@@ -33,7 +31,7 @@ def precond_test(model_name=None, test_config='GRAPH_LAPLACIAN_TEST', seed=1):
         model_config = configs.ModelConfig(**data['model_config'])
         run_config = configs.RunConfig(**data['run_config'])
 
-    graph_model = get_model(model_name, model_config, run_config, matlab_engine)
+    graph_model = get_model(model_name, model_config, run_config, octave)
 
     max_levels = 2
     cycle = 'V'
@@ -45,7 +43,7 @@ def precond_test(model_name=None, test_config='GRAPH_LAPLACIAN_TEST', seed=1):
     distribution = 'moons'
 
     model_prolongation = partial(model, graph_model=graph_model, normalize_rows_by_node=False,
-                                 matlab_engine=matlab_engine)
+                                 octave=octave)
     baseline_prolongation = baseline
 
     model_wins = 0

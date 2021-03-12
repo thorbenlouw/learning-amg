@@ -4,7 +4,7 @@ import random
 import string
 
 import fire
-import matlab.engine
+
 import numpy as np
 import pyamg
 import tensorflow as tf
@@ -19,8 +19,7 @@ from model import csrs_to_graphs_tuple, create_model, graphs_tuple_to_sparse_mat
 from multigrid_utils import block_diagonalize_A_single, block_diagonalize_P, two_grid_error_matrices, frob_norm, \
     two_grid_error_matrix, compute_coarse_A
 from relaxation import relaxation_matrices
-from utils import create_results_dir, write_config_file, most_frequent_splitting, chunks, get_gpu_device
-
+from utils import create_results_dir, write_config_file, most_frequent_splitting, chunks, get_gpu_device, init_octave
 
 
 def create_data_dir_if_not_exist():
@@ -30,11 +29,11 @@ def create_data_dir_if_not_exist():
         pass
 
 
-def create_dataset(num_As, data_config, run=0, matlab_engine=None):
+def create_dataset(num_As, data_config, run=0, octave=None):
     create_data_dir_if_not_exist()
     if data_config.load_data:
         As_filename = f"data_dir/periodic_delaunay_num_As_{num_As}_num_points_{data_config.num_unknowns}" \
-            f"_rnb_{data_config.root_num_blocks}_epoch_{run}.npy"
+                      f"_rnb_{data_config.root_num_blocks}_epoch_{run}.npy"
         if not os.path.isfile(As_filename):
             raise RuntimeError(f"file {As_filename} not found")
         As = np.load(As_filename)
@@ -50,11 +49,11 @@ def create_dataset(num_As, data_config, run=0, matlab_engine=None):
                          data_config.block_periodic,
                          data_config.root_num_blocks,
                          add_diag=data_config.add_diag,
-                         matlab_engine=matlab_engine) for _ in range(num_As)]
+                         octave=octave) for _ in range(num_As)]
 
     if data_config.save_data:
         As_filename = f"data_dir/periodic_delaunay_num_As_{num_As}_num_points_{data_config.num_unknowns}" \
-            f"_rnb_{data_config.root_num_blocks}_epoch_{run}.npy"
+                      f"_rnb_{data_config.root_num_blocks}_epoch_{run}.npy"
         np.save(As_filename, As)
     return create_dataset_from_As(As, data_config)
 
@@ -168,7 +167,7 @@ def save_model_and_optimizer(checkpoint_prefix, model, optimizer, global_step):
 
 def train_run(run_dataset, run, batch_size, config,
               model, optimizer, global_step, checkpoint_prefix,
-              eval_dataset, eval_A_graphs_tuple, eval_config, matlab_engine):
+              eval_dataset, eval_A_graphs_tuple, eval_config, octave):
     num_As = len(run_dataset.As)
     if num_As % batch_size != 0:
         raise RuntimeError("batch size must divide training data size")
@@ -181,7 +180,7 @@ def train_run(run_dataset, run, batch_size, config,
         end_index = start_index + batch_size
         batch_dataset = run_dataset[start_index:end_index]
 
-        batch_A_graphs_tuple = csrs_to_graphs_tuple(batch_dataset.As, matlab_engine,
+        batch_A_graphs_tuple = csrs_to_graphs_tuple(batch_dataset.As, octave,
                                                     coarse_nodes_list=batch_dataset.coarse_nodes_list,
                                                     baseline_P_list=batch_dataset.baseline_P_list,
                                                     node_indicators=config.run_config.node_indicators,
@@ -268,11 +267,11 @@ def record_tb(M, run, num_As, batch, batch_size, frob_loss, grads, loop, model,
         record_tb_spectral_radius(M, model, eval_dataset, eval_A_graphs_tuple, eval_config)
 
 
-def clone_model(model, model_config, run_config, matlab_engine):
+def clone_model(model, model_config, run_config, octave):
     clone = create_model(model_config)
 
     dummy_A = pyamg.gallery.poisson((7, 7), type='FE', format='csr')
-    dummy_input = csrs_to_graphs_tuple([dummy_A], matlab_engine, coarse_nodes_list=np.array([[0, 1]]),
+    dummy_input = csrs_to_graphs_tuple([dummy_A], octave, coarse_nodes_list=np.array([[0, 1]]),
                                        baseline_P_list=[tf.convert_to_tensor(dummy_A.toarray()[:, [0, 1]])],
                                        node_indicators=run_config.node_indicators,
                                        edge_indicators=run_config.edge_indicators)
@@ -281,7 +280,7 @@ def clone_model(model, model_config, run_config, matlab_engine):
     return clone
 
 
-def coarsen_As(fine_dataset, model, run_config, matlab_engine, batch_size=64):
+def coarsen_As(fine_dataset, model, run_config, octave, batch_size=64):
     # computes the Galerkin operator P^(T)AP on each of the A matrices in a batch, using the Prolongation
     # outputted from the model
     As = fine_dataset.As
@@ -294,7 +293,7 @@ def coarsen_As(fine_dataset, model, run_config, matlab_engine, batch_size=64):
     batched_As = list(chunks(As, batch_size))
     batched_coarse_nodes_list = list(chunks(coarse_nodes_list, batch_size))
     batched_baseline_P_list = list(chunks(baseline_P_list, batch_size))
-    A_graphs_tuple_batches = [csrs_to_graphs_tuple(batch_As, matlab_engine, coarse_nodes_list=batch_coarse_nodes_list,
+    A_graphs_tuple_batches = [csrs_to_graphs_tuple(batch_As, octave, coarse_nodes_list=batch_coarse_nodes_list,
                                                    baseline_P_list=batch_baseline_P_list,
                                                    node_indicators=run_config.node_indicators,
                                                    edge_indicators=run_config.edge_indicators
@@ -327,8 +326,8 @@ def coarsen_As(fine_dataset, model, run_config, matlab_engine, batch_size=64):
     return coarse_As
 
 
-def create_coarse_dataset(fine_dataset, model, data_config, run_config, matlab_engine):
-    As = coarsen_As(fine_dataset, model, run_config, matlab_engine)
+def create_coarse_dataset(fine_dataset, model, data_config, run_config, octave):
+    As = coarsen_As(fine_dataset, model, run_config, octave)
     return create_dataset_from_As(As, data_config)
 
 
@@ -337,18 +336,16 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_EVAL', se
     eval_config = getattr(configs, eval_config)
     eval_config.run_config = config.run_config
 
-    matlab_engine = matlab.engine.start_matlab()
-
     # fix random seeds for reproducibility
     np.random.seed(seed)
-    tf.random.set_random_seed(seed)
-    matlab_engine.eval(f'rng({seed})')
+    tf.compat.v1.random.set_random_seed(seed)
+    octave = init_octave(seed)
 
     batch_size = min(config.train_config.samples_per_run, config.train_config.batch_size)
 
     # we measure the performance of the model over time on one larger instance that is not optimized for
     eval_dataset = create_dataset(1, eval_config.data_config)
-    eval_A_graphs_tuple = csrs_to_graphs_tuple(eval_dataset.As, matlab_engine,
+    eval_A_graphs_tuple = csrs_to_graphs_tuple(eval_dataset.As, octave,
                                                coarse_nodes_list=eval_dataset.coarse_nodes_list,
                                                baseline_P_list=eval_dataset.baseline_P_list,
                                                node_indicators=eval_config.run_config.node_indicators,
@@ -359,8 +356,8 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_EVAL', se
         raise NotImplementedError()
     else:
         model = create_model(config.model_config)
-        global_step = tf.train.get_or_create_global_step()
-        optimizer = tf.train.AdamOptimizer(learning_rate=config.train_config.learning_rate)
+        global_step = tf.compat.v1.train.get_or_create_global_step()
+        optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=config.train_config.learning_rate)
 
     run_name = ''.join(random.choices(string.digits, k=5))  # to make the run_name string unique
     create_results_dir(run_name)
@@ -375,22 +372,22 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_EVAL', se
         # we create the data before the training loop starts for efficiency,
         # at the loop we only slice batches and convert to tensors
         run_dataset = create_dataset(config.train_config.samples_per_run, config.data_config,
-                                     run=run, matlab_engine=matlab_engine)
+                                     run=run, octave=octave)
 
         checkpoint = train_run(run_dataset, run, batch_size, config,
                                model, optimizer, global_step,
                                checkpoint_prefix,
                                eval_dataset, eval_A_graphs_tuple, eval_config,
-                               matlab_engine)
+                               octave)
         checkpoint.save(file_prefix=checkpoint_prefix)
         writer.flush()
 
     if config.train_config.coarsen:
-        old_model = clone_model(model, config.model_config, config.run_config, matlab_engine)
+        old_model = clone_model(model, config.model_config, config.run_config, octave)
 
         for run in range(config.train_config.num_runs):
             run_dataset = create_dataset(config.train_config.samples_per_run, config.data_config,
-                                         run=run, matlab_engine=matlab_engine)
+                                         run=run, octave=octave)
 
             fine_data_config = copy.deepcopy(config.data_config)
             # RS coarsens to roughly 1/3 of the size of the grid, CLJP to roughly 1/2
@@ -398,11 +395,11 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_EVAL', se
             fine_run_dataset = create_dataset(config.train_config.samples_per_run,
                                               fine_data_config,
                                               run=run,
-                                              matlab_engine=matlab_engine)
+                                              octave=octave)
             coarse_run_dataset = create_coarse_dataset(fine_run_dataset, old_model,
                                                        config.data_config,
                                                        config.run_config,
-                                                       matlab_engine=matlab_engine)
+                                                       octave=octave)
 
             combined_run_dataset = run_dataset + coarse_run_dataset
             combined_run_dataset = combined_run_dataset.shuffle()
@@ -411,14 +408,14 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_EVAL', se
                                    model, optimizer, global_step,
                                    checkpoint_prefix,
                                    eval_dataset, eval_A_graphs_tuple, eval_config,
-                                   matlab_engine)
+                                   octave)
             checkpoint.save(file_prefix=checkpoint_prefix)
     writer.flush()
 
 
 if __name__ == '__main__':
-    tf_config = tf.ConfigProto()
+    tf_config = tf.compat.v1.ConfigProto()
     tf_config.gpu_options.allow_growth = True
-    tf.enable_eager_execution(config=tf_config)
+    tf.compat.v1.enable_eager_execution(config=tf_config)
 
     fire.Fire(train)

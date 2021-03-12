@@ -1,5 +1,4 @@
 import graph_nets as gn
-import matlab
 import numpy as np
 import tensorflow as tf
 from scipy.sparse import csr_matrix
@@ -8,12 +7,12 @@ from data import As_poisson_grid
 from graph_net_model import EncodeProcessDecodeNonRecurrent
 from utils import get_gpu_device
 
-def get_model(model_name, model_config, run_config, matlab_engine, train=False, train_config=None):
+def get_model(model_name, model_config, run_config, octave, train=False, train_config=None):
     dummy_input = As_poisson_grid(1, 7 ** 2)[0]
     checkpoint_dir = './training_dir/' + model_name
     graph_model, optimizer, global_step = load_model(checkpoint_dir, dummy_input, model_config,
                                                      run_config,
-                                                     matlab_engine, get_optimizer=train,
+                                                     octave, get_optimizer=train,
                                                      train_config=train_config)
     if train:
         return graph_model, optimizer, global_step
@@ -21,13 +20,13 @@ def get_model(model_name, model_config, run_config, matlab_engine, train=False, 
         return graph_model
 
 
-def load_model(checkpoint_dir, dummy_input, model_config, run_config, matlab_engine, get_optimizer=True,
+def load_model(checkpoint_dir, dummy_input, model_config, run_config, octave, get_optimizer=True,
                train_config=None):
     tf.enable_eager_execution()
     model = create_model(model_config)
 
     # we have to use the model at least once to get the list of variables
-    model(csrs_to_graphs_tuple([dummy_input], matlab_engine, coarse_nodes_list=np.array([[0, 1]]),
+    model(csrs_to_graphs_tuple([dummy_input], octave, coarse_nodes_list=np.array([[0, 1]]),
                                baseline_P_list=[tf.convert_to_tensor(dummy_input.toarray()[:, [0, 1]])],
                                node_indicators=run_config.node_indicators,
                                edge_indicators=run_config.edge_indicators))
@@ -62,7 +61,7 @@ def create_model(model_config):
                                                concat_encoder=model_config.concat_encoder)
 
 
-def csrs_to_graphs_tuple(csrs, matlab_engine, node_feature_size=128, coarse_nodes_list=None, baseline_P_list=None,
+def csrs_to_graphs_tuple(csrs, octave, node_feature_size=128, coarse_nodes_list=None, baseline_P_list=None,
                          node_indicators=True, edge_indicators=True):
     dtype = tf.float64
 
@@ -80,7 +79,7 @@ def csrs_to_graphs_tuple(csrs, matlab_engine, node_feature_size=128, coarse_node
                 baseline_P = csr_matrix(baseline_P.numpy())
 
             baseline_P_rows, baseline_P_cols = P_square_sparsity_pattern(baseline_P, baseline_P.shape[0],
-                                                                         coarse_nodes, matlab_engine)
+                                                                         coarse_nodes, octave)
             coo = csr.tocoo()
 
             # construct numpy structured arrays, where each element is a tuple (row,col), so that we can later use
@@ -142,15 +141,15 @@ def csrs_to_graphs_tuple(csrs, matlab_engine, node_feature_size=128, coarse_node
     return graphs_tuple
 
 
-def P_square_sparsity_pattern(P, size, coarse_nodes, matlab_engine):
+def P_square_sparsity_pattern(P, size, coarse_nodes, octave):
     P_coo = P.tocoo()
-    P_rows = matlab.double((P_coo.row + 1).tolist())  # Matlab complaning that it needs to be a rect shape
-    P_cols = matlab.double((P_coo.col + 1).tolist())
-    P_values = matlab.double(P_coo.data.tolist())
-    coarse_nodes = matlab.double((coarse_nodes + 1).tolist())
-    rows, cols = matlab_engine.square_P(P_rows, P_cols, P_values, size, coarse_nodes,  nargout=2)
-    rows = np.array(rows._data).reshape(rows.size, order='F') - 1
-    cols = np.array(cols._data).reshape(cols.size, order='F') - 1
+    P_rows = octave.double(P_coo.row + 1)
+    P_cols = octave.double(P_coo.col + 1)
+    P_values = octave.double(P_coo.data)
+    coarse_nodes = octave.double(coarse_nodes + 1)
+    rows, cols = octave.square_P(P_rows, P_cols, P_values, size, coarse_nodes,  nout=2)
+    rows = rows.reshape(rows.size, order='F') - 1
+    cols = cols.reshape(cols.size, order='F') - 1
     rows, cols = rows.T[0], cols.T[0]
     return rows, cols
 

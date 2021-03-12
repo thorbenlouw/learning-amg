@@ -2,7 +2,6 @@ import math
 from collections import defaultdict
 from functools import lru_cache
 
-import matlab
 import meshpy.triangle as triangle
 import numpy as np
 import pyamg
@@ -13,18 +12,18 @@ from scipy.spatial.qhull import Delaunay
 from sklearn import datasets
 from sklearn.neighbors import kneighbors_graph
 from sklearn.preprocessing import StandardScaler
+from utils import generate_delaunay_triangulation
 
-
-def generate_A(size, dist, block_periodic, root_num_blocks, add_diag=False, matlab_engine=None):
+def generate_A(size, dist, block_periodic, root_num_blocks, add_diag=False, octave=None):
     if dist is 'lognormal_laplacian':
-        A = generate_A_delaunay_dirichlet_lognormal(size, matlab_engine=matlab_engine)
+        A = generate_A_delaunay_dirichlet_lognormal(size, octave=octave)
     elif dist is 'lognormal_laplacian_periodic':
         if block_periodic:
-            A, _ = generate_A_delaunay_block_periodic_lognormal(size, root_num_blocks, matlab_engine)
+            A, _ = generate_A_delaunay_block_periodic_lognormal(size, root_num_blocks, octave)
         else:
             A = generate_A_delaunay_periodic_lognormal(size, uniform=False)
     elif dist is 'lognormal_complex_fem':
-        A = A_dirichlet_finite_element_quality(size, matlab_engine, hole=True)
+        A = A_dirichlet_finite_element_quality(size, octave, hole=True)
     elif dist is 'spectral_clustering':
         A = generate_A_spec_cluster(size, add_diag=add_diag)
     elif dist is 'poisson':
@@ -40,13 +39,13 @@ def generate_A(size, dist, block_periodic, root_num_blocks, add_diag=False, matl
     return A
 
 
-def drop_zero_row_col_matlab(A, matlab_engine):
+def drop_zero_row_col_matlab(A, octave):
     size = A.shape[0]
     A_coo = A.tocoo()
-    A_rows = matlab.double((A_coo.row + 1))
-    A_cols = matlab.double((A_coo.col + 1))
-    A_values = matlab.double(A_coo.data)
-    rows, cols, values = matlab_engine.drop_zero_row_col(A_rows, A_cols, A_values, size, nargout=3)
+    A_rows = octave.double((A_coo.row + 1))
+    A_cols = octave.double((A_coo.col + 1))
+    A_values = octave.double(A_coo.data)
+    rows, cols, values = octave.drop_zero_row_col(A_rows, A_cols, A_values, size, nout=3)
     rows = np.array(rows._data).reshape(rows.size, order='F') - 1
     cols = np.array(cols._data).reshape(cols.size, order='F') - 1
     values = np.array(values._data).reshape(values.size, order='F')
@@ -61,7 +60,7 @@ def drop_zero_row_col(A):
 
 
 def generate_A_delaunay_dirichlet_lognormal(num_points, constant_coefficients=False, uniform=False,
-                                            matlab_engine=None):
+                                            octave=None):
     """
     Poisson equation on triangular mesh, with lognormal coefficients
     We create a triangulation of random points on the square from (-1,-1) to (2,2),
@@ -144,14 +143,15 @@ def generate_A_delaunay_dirichlet_lognormal(num_points, constant_coefficients=Fa
         A[boundary_id, boundary_id] += diagonal_value
 
     # drop zero rows and columns
-    if matlab_engine:
-        A = drop_zero_row_col_matlab(A, matlab_engine)
+    if octave:
+        A = drop_zero_row_col_matlab(A, octave)
     else:
         A = drop_zero_row_col(A).tocsr()
     return A
 
 
-def generate_A_spec_cluster(num_unknowns, add_diag=False, num_clusters=2, unit_std=False, dim=2, dist='gauss', gamma=None,
+def generate_A_spec_cluster(num_unknowns, add_diag=False, num_clusters=2, unit_std=False, dim=2, dist='gauss',
+                            gamma=None,
                             distance=False, return_x=False, n_neighbors=10):
     """
     Similar params to https://scikit-learn.org/stable/auto_examples/cluster/plot_cluster_comparison.html
@@ -205,13 +205,15 @@ def generate_A_spec_cluster(num_unknowns, add_diag=False, num_clusters=2, unit_s
         return laplacian
 
 
-def generate_A_delaunay_block_periodic_lognormal(num_unknowns_per_block, root_num_blocks, matlab_engine):
+
+
+def generate_A_delaunay_block_periodic_lognormal(num_unknowns_per_block, root_num_blocks, octave):
     """Poisson equation on triangular mesh, with lognormal coefficients, and block periodic boundary conditions"""
     # points are correct only for 3x3 number of blocks
-    A_matlab, points_matlab = matlab_engine.block_periodic_delaunay(num_unknowns_per_block, root_num_blocks, nargout=2)
-    A_numpy = np.array(A_matlab._data).reshape(A_matlab.size, order='F')
-    points_numpy = np.array(points_matlab._data).reshape(points_matlab.size, order='F')
-    return csr_matrix(A_numpy), points_numpy
+    tri = generate_delaunay_triangulation(num_unknowns_per_block)
+    connectivity_list = tri.simplices + 1
+    A = octave.computeBlockPeriodicGraphLaplacian(connectivity_list, num_unknowns_per_block, root_num_blocks)
+    return csr_matrix(A), tri.points
 
 
 def As_poisson_grid(num_As, num_unknowns, constant_coefficients=False):
@@ -278,7 +280,7 @@ def vertex_to_tris_map(simplices):
     return M
 
 
-def A_dirichlet_finite_element_quality(num_unknowns, matlab_engine, constant_coeffs=False, hole=False, uniform=False):
+def A_dirichlet_finite_element_quality(num_unknowns, octave, constant_coeffs=False, hole=False, uniform=False):
     if hole:
         mesh = create_hole_mesh(num_unknowns)
     else:
@@ -346,7 +348,7 @@ def A_dirichlet_finite_element_quality(num_unknowns, matlab_engine, constant_coe
             (mesh_points[:, 1] <= 0) |
             (mesh_points[:, 1] >= 1)
         )[0]
-    A = drop_row_col_matlab(A, outside_indices, matlab_engine)
+    A = drop_row_col_matlab(A, outside_indices, octave)
     return A.tocsr()
 
 
@@ -442,14 +444,14 @@ def generate_A_delaunay_periodic_lognormal(num_unknowns, uniform=False):
     return A.tocsr()
 
 
-def drop_row_col_matlab(A, indices, matlab_engine):
+def drop_row_col_matlab(A, indices, octave):
     size = A.shape[0]
     A_coo = A.tocoo()
-    A_rows = matlab.double((A_coo.row + 1))
-    A_cols = matlab.double((A_coo.col + 1))
-    indices = matlab.double((indices + 1))
-    A_values = matlab.double(A_coo.data)
-    rows, cols, values = matlab_engine.drop_row_col(A_rows, A_cols, A_values, size, indices, nargout=3)
+    A_rows = octave.double((A_coo.row + 1))
+    A_cols = octave.double((A_coo.col + 1))
+    indices = octave.double((indices + 1))
+    A_values = octave.double(A_coo.data)
+    rows, cols, values = octave.drop_row_col(A_rows, A_cols, A_values, size, indices, nargout=3)
     rows = np.array(rows._data).reshape(rows.size, order='F') - 1
     cols = np.array(cols._data).reshape(cols.size, order='F') - 1
     values = np.array(values._data).reshape(values.size, order='F')

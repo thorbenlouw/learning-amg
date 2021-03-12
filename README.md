@@ -8,9 +8,7 @@ https://arxiv.org/abs/2003.05744
  * NumPy
  * PyAMG
  * Graph Nets: https://github.com/deepmind/graph_nets
- * MATLAB >= R2019a
- * MATLAB engine for Python: https://www.mathworks.com/help/matlab/matlab_external/install-the-matlab-engine-for-python.html
-    * Requires modifying internals of Python library for efficient passing of NumPy arrays, as described here: https://stackoverflow.com/a/45290997
+ * GNU Octave, with the statistics package from Octave Forge
  * tqdm
  * Fire: https://github.com/google/python-fire
  * scikit-learn

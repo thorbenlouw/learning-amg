@@ -2,7 +2,6 @@ import json
 from functools import partial
 
 import fire
-import matlab.engine
 import numpy as np
 import tensorflow as tf
 from tqdm import tqdm
@@ -12,6 +11,7 @@ from data import generate_A
 from model import get_model
 from prolongation_functions import model, baseline
 from ruge_stuben_custom_solver import ruge_stuben_custom_solver
+from utils import init_octave
 
 def create_test_data_dir_if_not_exist():
     try:
@@ -20,12 +20,12 @@ def create_test_data_dir_if_not_exist():
         pass
 
 
-def test_size(model_name, graph_model, size, test_config, run_config, matlab_engine):
+def test_size(model_name, graph_model, size, test_config, run_config, octave):
     model_prolongation = partial(model, graph_model=graph_model,
                                  normalize_rows_by_node=run_config.normalize_rows_by_node,
                                  edge_indicators=run_config.edge_indicators,
                                  node_indicators=run_config.node_indicators,
-                                 matlab_engine=matlab_engine)
+                                 octave=octave)
     baseline_prolongation = baseline
 
     model_errors_div_diff = []
@@ -135,12 +135,11 @@ def test_model(model_name=None, test_config='GRAPH_LAPLACIAN_TEST', seed=1):
     if model_name is None:
         raise RuntimeError("model name required")
     model_name = str(model_name)
-    matlab_engine = matlab.engine.start_matlab()
 
     # fix random seeds for reproducibility
     np.random.seed(seed)
     tf.random.set_random_seed(seed)
-    matlab_engine.eval(f'rng({seed})')
+    octave = init_octave(seed)
 
     test_config = getattr(configs, test_config).test_config
     config_file = f"results/{model_name}/config.json"
@@ -149,11 +148,11 @@ def test_model(model_name=None, test_config='GRAPH_LAPLACIAN_TEST', seed=1):
         model_config = configs.ModelConfig(**data['model_config'])
         run_config = configs.RunConfig(**data['run_config'])
 
-    model = get_model(model_name, model_config, run_config, matlab_engine)
+    model = get_model(model_name, model_config, run_config, octave)
 
     for size in test_config.test_sizes:
         test_size(model_name, model, size, test_config, run_config,
-                  matlab_engine)
+                  octave)
 
 
 if __name__ == '__main__':

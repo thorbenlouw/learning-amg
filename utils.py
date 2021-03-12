@@ -6,6 +6,8 @@ from functools import lru_cache
 
 import numpy as np
 from collections import Counter
+from scipy.spatial.qhull import Delaunay
+from oct2py import octave
 
 
 def chunks(l, n):
@@ -54,3 +56,39 @@ def get_gpu_device():
     # For now, hack to CPU
     return ":/cpu:0"
     # normally return ":/gpu:0"
+
+
+def generate_delaunay_triangulation(k):
+    x = np.random.rand(k, 1)
+    y = np.random.rand(k, 1)
+    X = np.concatenate((
+        x - 1,
+        x - 1,
+        x - 1,
+        x,
+        x,
+        x,
+        x + 1,
+        x + 1,
+        x + 1))
+    Y = np.concatenate((
+        y - 1,
+        y,
+        y + 1,
+        y - 1,
+        y,
+        y + 1,
+        y - 1,
+        y,
+        y + 1))
+    points = np.dstack((X, Y)).reshape((-1, 2))
+    tri = Delaunay(points)
+    return tri
+
+
+def init_octave(seed):
+    octave.eval(f'rand("seed", {seed})')
+    octave.eval(f'randn("seed", {seed})')
+    octave.eval('pkg load statistics')
+    octave.addpath(os.curdir)
+    return octave

@@ -15,10 +15,10 @@ def graphs_tuple_to_csr(graphs_tuple):
     return csr_matrix((data, (row_indices, col_indices)), shape=shape)
 
 
-def model(A, coarse_nodes, baseline_P, C, graph_model, matlab_engine=None, normalize_rows_by_node=False,
+def model(A, coarse_nodes, baseline_P, C, graph_model, octave=None, normalize_rows_by_node=False,
           edge_indicators=True, node_indicators=True):
     with tf.device(get_gpu_device()):
-        graphs_tuple = csrs_to_graphs_tuple([A], matlab_engine, coarse_nodes_list=[coarse_nodes],
+        graphs_tuple = csrs_to_graphs_tuple([A], octave, coarse_nodes_list=[coarse_nodes],
                                             baseline_P_list=[baseline_P],
                                             edge_indicators=edge_indicators,
                                             node_indicators=node_indicators)

@@ -5,7 +5,7 @@ from graph_nets import modules
 from functools import partial
 
 
-class EncodeProcessDecodeNonRecurrent(snt.AbstractModule):
+class EncodeProcessDecodeNonRecurrent(snt.Module):
     """
     similar to EncodeProcessDecode, but with non-recurrent core
     see docs for EncodeProcessDecode
@@ -22,6 +22,9 @@ class EncodeProcessDecodeNonRecurrent(snt.AbstractModule):
                  concat_encoder=True,
                  name="EncodeProcessDecodeNonRecurrent"):
         super(EncodeProcessDecodeNonRecurrent, self).__init__(name=name)
+        # support_modes = snt.mixed_precision.modes([tf.float32, tf.float16])
+        # snt.Linear.__call__ = support_modes(snt.Linear.__call__)
+        # snt.mixed_precision.enable(tf.float16)
         self._encoder = MLPGraphIndependent(latent_size=latent_size, num_layers=num_layers)
         self._cores = [MLPGraphNetwork(latent_size=latent_size, num_layers=num_layers,
                                        global_block=global_block) for _ in range(num_cores)]
@@ -40,11 +43,11 @@ class EncodeProcessDecodeNonRecurrent(snt.AbstractModule):
             global_fn = None
         else:
             global_fn = lambda: snt.Linear(global_output_size, name="global_output")
-        with self._enter_variable_scope():
+        with self.name_scope:
             self._output_transform = modules.GraphIndependent(edge_fn, node_fn,
                                                               global_fn)
 
-    def _build(self, input_op):
+    def __call__(self, input_op):
         latent = self._encoder(input_op)
         latent0 = latent
         for i in range(len(self._cores)):
@@ -56,7 +59,7 @@ class EncodeProcessDecodeNonRecurrent(snt.AbstractModule):
         return self._output_transform(self._decoder(latent))
 
 
-class MLPGraphNetwork(snt.AbstractModule):
+class MLPGraphNetwork(snt.Module):
     """GraphNetwork with MLP edge, node, and global models."""
 
     def __init__(self, latent_size=16, num_layers=2, global_block=True, last_round=False,
@@ -70,7 +73,7 @@ class MLPGraphNetwork(snt.AbstractModule):
         else:
             partial_make_mlp_model_edges = partial_make_mlp_model
 
-        with self._enter_variable_scope():
+        with self.name_scope:
             if global_block:
                 self._network = modules.GraphNetwork(partial_make_mlp_model_edges, partial_make_mlp_model,
                                                      partial_make_mlp_model,
@@ -98,11 +101,11 @@ class MLPGraphNetwork(snt.AbstractModule):
                                                          "use_globals": False,
                                                      })
 
-    def _build(self, inputs):
+    def __call__(self, inputs):
         return self._network(inputs)
 
 
-class MLPGraphIndependent(snt.AbstractModule):
+class MLPGraphIndependent(snt.Module):
     """GraphIndependent with MLP edge, node, and global models."""
 
     def __init__(self, latent_size=16, num_layers=2, name="MLPGraphIndependent"):
@@ -111,13 +114,13 @@ class MLPGraphIndependent(snt.AbstractModule):
         partial_make_mlp_model = partial(make_mlp_model, latent_size=latent_size, num_layers=num_layers,
                                          last_round_edges=False)
 
-        with self._enter_variable_scope():
+        with self.name_scope:
             self._network = modules.GraphIndependent(
                 edge_model_fn=partial_make_mlp_model,
                 node_model_fn=partial_make_mlp_model,
                 global_model_fn=partial_make_mlp_model)
 
-    def _build(self, inputs):
+    def __call__(self, inputs):
         return self._network(inputs)
 
 
@@ -138,8 +141,8 @@ def make_mlp_model(latent_size=16, num_layers=2, last_round_edges=False):
         ])
 
 
-class IdentityModule(snt.AbstractModule):
-    def _build(self, inputs):
+class IdentityModule(snt.Module):
+    def __call__(self, inputs):
         return tf.identity(inputs)
 
 

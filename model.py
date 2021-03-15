@@ -5,7 +5,7 @@ from scipy.sparse import csr_matrix
 
 from data import As_poisson_grid
 from graph_net_model import EncodeProcessDecodeNonRecurrent
-from utils import get_gpu_device
+from utils import get_accelerator_device
 
 def get_model(model_name, model_config, run_config, octave, train=False, train_config=None):
     dummy_input = As_poisson_grid(1, 7 ** 2)[0]
@@ -53,7 +53,7 @@ def load_model(checkpoint_dir, dummy_input, model_config, run_config, octave, ge
 
 
 def create_model(model_config):
-    with tf.device(get_gpu_device()):
+    with get_accelerator_device():
         return EncodeProcessDecodeNonRecurrent(num_cores=model_config.mp_rounds, edge_output_size=1,
                                                node_output_size=1, global_block=model_config.global_block,
                                                latent_size=model_config.latent_size,

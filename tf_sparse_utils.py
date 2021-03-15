@@ -37,23 +37,25 @@ def sparse_tensor_to_csr(a):
     rows = indices[:, 0]
     cols = indices[:, 1]
     data = a.values.numpy()
-    shape = (a.shape[0].value, a.shape[1].value)
+    shape = (a.shape[0], a.shape[1])
     a_coo = coo_matrix((data, (rows, cols)), shape=shape)
     return a_coo.tocsr()
 
 
 def sparse_multiply(a, b):
-    #  there are multiple ways to do it in Tensorflow, see:
-    #  https://www.tensorflow.org/api_docs/python/tf/sparse/sparse_dense_matmul
-    #  https://stackoverflow.com/questions/34030140/is-sparse-tensor-multiplication-implemented-in-tensorflow
-    dense_a = to_dense(a)
-    dense_b = to_dense(b)
-    return tf.matmul(dense_a, dense_b, a_is_sparse=True, b_is_sparse=True)
-
+    # #  there are multiple ways to do it in Tensorflow, see:
+    # #  https://www.tensorflow.org/api_docs/python/tf/sparse/sparse_dense_matmul
+    # #  https://stackoverflow.com/questions/34030140/is-sparse-tensor-multiplication-implemented-in-tensorflow
+    # dense_a = to_dense(a)
+    # dense_b = to_dense(b)
+    # return tf.matmul(dense_a, dense_b, a_is_sparse=True, b_is_sparse=True)
+    return tf.raw_ops.SparseMatrixSparseMatMul(
+        a, b, a.dtype
+    )
 
 def pad_diagonal(a, padded_length):
     # given square matrix "a", pad with 1's on diagonal until matrix is of size "padded_length"
-    a_length = a.shape[0].value
+    a_length = a.shape[0]
     if a_length > padded_length:
         raise RuntimeError(f"padded length {padded_length} is larger than matrix length {a_length}")
     if a_length == padded_length:

@@ -39,8 +39,8 @@ def compute_Cs(padded_As, Is, padded_Ps, padded_Rs, coarse_As_inv):
 
 
 def two_grid_error_matrices(padded_As, padded_Ps, padded_Rs, padded_Ss):
-    batch_size = padded_As.shape[0].value
-    padded_length = padded_As.shape[1].value
+    batch_size = padded_As.shape[0]
+    padded_length = padded_As.shape[1]
     Is = tf.eye(padded_length, batch_shape=[batch_size], dtype=padded_As.dtype)
     coarse_As = compute_coarse_As(padded_Rs, padded_As, padded_Ps)
     coarse_As_inv = tf.linalg.inv(coarse_As)
@@ -50,7 +50,7 @@ def two_grid_error_matrices(padded_As, padded_Ps, padded_Rs, padded_Ss):
 
 
 def two_grid_error_matrix(A, P, R, S):
-    I = tf.eye(A.shape[0].value, dtype=A.dtype)
+    I = tf.eye(A.shape[0], dtype=A.dtype)
     coarse_A = compute_coarse_A(R, A, P)
     coarse_A_inv = tf.linalg.inv(coarse_A)
     C = compute_C(A, I, P, R, coarse_A_inv)
@@ -84,10 +84,7 @@ def extract_diag_blocks(block_diag_As, block_size, root_num_blocks, single_matri
 
 def block_diagonalize_A_fast(As, root_num_blocks, tensor=False):
     """Returns root_num_blocks**2 matrices that represent the block diagonalization of A"""
-    if tensor:
-        total_size = As.shape[1].value
-    else:
-        total_size = As.shape[1]
+    total_size = As.shape[1]
     block_size = total_size // root_num_blocks
 
     double_W, double_W_conj_t = create_double_W(block_size, root_num_blocks, tensor)
@@ -104,10 +101,7 @@ def block_diagonalize_A_fast(As, root_num_blocks, tensor=False):
 
 def block_diagonalize_A_single(A, root_num_blocks, tensor=False):
     """Returns root_num_blocks**2 matrices that represent the block diagonalization of A"""
-    if tensor:
-        total_size = A.shape[0].value
-    else:
-        total_size = A.shape[0]
+    total_size = A.shape[0]
     block_size = total_size // root_num_blocks
 
     double_W, double_W_conj_t = create_double_W(block_size, root_num_blocks, tensor)
@@ -153,7 +147,7 @@ def block_diagonalize_A(A, root_num_blocks):
 
 
 def pad_P(P, coarse_nodes):
-    total_size = P.shape[0].value
+    total_size = P.shape[0]
     zero_column = tf.zeros([total_size], dtype=tf.float64)
     P_cols = tf.unstack(P, axis=1)
     full_P_cols = []
@@ -177,7 +171,7 @@ def block_diagonalize_P(P, root_num_blocks, coarse_nodes):
     Returns root_num_blocks**2 matrices that represent the block diagonalization of P
     Only works on block-periodic prolongation matrices
     """
-    total_size = P.shape[0].value
+    total_size = P.shape[0]
     block_size = total_size // root_num_blocks
 
     # we build the padded P matrix column by column, I couldn't find a more efficient way

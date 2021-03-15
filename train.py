@@ -19,7 +19,7 @@ from model import csrs_to_graphs_tuple, create_model, graphs_tuple_to_sparse_mat
 from multigrid_utils import block_diagonalize_A_single, block_diagonalize_P, two_grid_error_matrices, frob_norm, \
     two_grid_error_matrix, compute_coarse_A
 from relaxation import relaxation_matrices
-from utils import create_results_dir, write_config_file, most_frequent_splitting, chunks, get_gpu_device, init_octave
+from utils import create_results_dir, write_config_file, most_frequent_splitting, chunks, get_accelerator_device, init_octave
 
 
 def create_data_dir_if_not_exist():
@@ -158,7 +158,7 @@ def loss(dataset, A_graphs_tuple, P_graphs_tuple,
 
 
 def save_model_and_optimizer(checkpoint_prefix, model, optimizer, global_step):
-    variables = model.get_all_variables()
+    variables = model.variables
     variables_dict = {variable.name: variable for variable in variables}
     checkpoint = tf.train.Checkpoint(**variables_dict, optimizer=optimizer, global_step=global_step)
     checkpoint.save(file_prefix=checkpoint_prefix)
@@ -167,7 +167,7 @@ def save_model_and_optimizer(checkpoint_prefix, model, optimizer, global_step):
 
 def train_run(run_dataset, run, batch_size, config,
               model, optimizer, global_step, checkpoint_prefix,
-              eval_dataset, eval_A_graphs_tuple, eval_config, octave):
+              eval_dataset, eval_A_graphs_tuple, eval_config, octave, writer):
     num_As = len(run_dataset.As)
     if num_As % batch_size != 0:
         raise RuntimeError("batch size must divide training data size")
@@ -187,7 +187,7 @@ def train_run(run_dataset, run, batch_size, config,
                                                     edge_indicators=config.run_config.edge_indicators)
 
         with tf.GradientTape() as tape:
-            with tf.device(get_gpu_device()):
+            with get_accelerator_device():
                 batch_P_graphs_tuple = model(batch_A_graphs_tuple)
             frob_loss, M = loss(batch_dataset, batch_A_graphs_tuple, batch_P_graphs_tuple,
                                 config.run_config, config.train_config, config.data_config)
@@ -199,7 +199,7 @@ def train_run(run_dataset, run, batch_size, config,
 
         # we don't call .get_variables() because the model is Sequential/custom,
         # see docs for Sequential.get_variables()
-        variables = model.get_all_variables()
+        variables = model.variables
         grads = tape.gradient(frob_loss, variables)
 
         global_step.assign_add(batch_size - 1)  # apply_gradients increments global_step by 1
@@ -207,38 +207,38 @@ def train_run(run_dataset, run, batch_size, config,
                                   global_step=global_step)
 
         record_tb(M, run, num_As, batch, batch_size, frob_loss, grads, loop, model,
-                  variables, eval_dataset, eval_A_graphs_tuple, eval_config)
+                  variables, eval_dataset, eval_A_graphs_tuple, eval_config, writer)
     return checkpoint
 
 
-def record_tb_loss(frob_loss):
-    with tf.contrib.summary.record_summaries_every_n_global_steps(1):
-        tf.contrib.summary.scalar('loss', frob_loss)
+def record_tb_loss(frob_loss, writer, step):
+    with writer.as_default():
+        tf.summary.scalar('loss', frob_loss, step)
 
 
-def record_tb_params(batch_size, grads, loop, variables):
-    with tf.contrib.summary.record_summaries_every_n_global_steps(1):
+def record_tb_params(batch_size, grads, loop, variables, writer, step):
+    with writer.as_default():
         if hasattr(loop, 'avg_time') and loop.avg_time is not None:
-            tf.contrib.summary.scalar('seconds_per_batch', tf.convert_to_tensor(loop.avg_time))
+            tf.summary.scalar('seconds_per_batch', tf.convert_to_tensor(loop.avg_time), step)
 
         for i in range(len(variables)):
             variable = variables[i]
             variable_name = variable.name
             grad = grads[i]
             if grad is not None:
-                tf.contrib.summary.scalar(variable_name + '_grad', tf.norm(grad) / batch_size)
-                tf.contrib.summary.histogram(variable_name + '_grad_histogram', grad / batch_size)
-                tf.contrib.summary.scalar(variable_name + '_grad_fraction_dead', tf.nn.zero_fraction(grad))
-                tf.contrib.summary.scalar(variable_name + '_value', tf.norm(variable))
-                tf.contrib.summary.histogram(variable_name + '_value_histogram', variable)
+                tf.summary.scalar(variable_name + '_grad', tf.norm(grad) / batch_size, step)
+                tf.summary.histogram(variable_name + '_grad_histogram', grad / batch_size, step)
+                tf.summary.scalar(variable_name + '_grad_fraction_dead', tf.nn.zero_fraction(grad), step)
+                tf.summary.scalar(variable_name + '_value', tf.norm(variable), step)
+                tf.summary.histogram(variable_name + '_value_histogram', variable, step)
 
 
-def record_tb_spectral_radius(M, model, eval_dataset, eval_A_graphs_tuple, eval_config):
-    with tf.contrib.summary.record_summaries_every_n_global_steps(1):
+def record_tb_spectral_radius(M, model, eval_dataset, eval_A_graphs_tuple, eval_config, writer, step):
+    with writer.as_default():
         spectral_radius = np.abs(np.linalg.eigvals(M.numpy())).max()
-        tf.contrib.summary.scalar('spectral_radius', spectral_radius)
+        tf.summary.scalar('spectral_radius', spectral_radius, step)
 
-        with tf.device(get_gpu_device()):
+        with get_accelerator_device():
             eval_P_graphs_tuple = model(eval_A_graphs_tuple)
         eval_loss, eval_M = loss(eval_dataset, eval_A_graphs_tuple, eval_P_graphs_tuple,
                                  eval_config.run_config,
@@ -246,25 +246,25 @@ def record_tb_spectral_radius(M, model, eval_dataset, eval_A_graphs_tuple, eval_
                                  eval_config.data_config)
 
         eval_spectral_radius = np.abs(np.linalg.eigvals(eval_M.numpy())).max()
-        tf.contrib.summary.scalar('eval_loss', eval_loss)
-        tf.contrib.summary.scalar('eval_spectral_radius', eval_spectral_radius)
+        tf.summary.scalar('eval_loss', eval_loss, step)
+        tf.summary.scalar('eval_spectral_radius', eval_spectral_radius, step)
 
 
 def record_tb(M, run, num_As, batch, batch_size, frob_loss, grads, loop, model,
-              variables, eval_dataset, eval_A_graphs_tuple, eval_config):
+              variables, eval_dataset, eval_A_graphs_tuple, eval_config, writer):
     batch = run * num_As + batch
 
     record_loss_every = max(1 // batch_size, 1)
     if batch % record_loss_every == 0:
-        record_tb_loss(frob_loss)
+        record_tb_loss(frob_loss, writer, batch)
 
     record_params_every = max(300 // batch_size, 1)
     if batch % record_params_every == 0:
-        record_tb_params(batch_size, grads, loop, variables)
+        record_tb_params(batch_size, grads, loop, variables, writer, batch)
 
     record_spectral_every = max(300 // batch_size, 1)
     if batch % record_spectral_every == 0:
-        record_tb_spectral_radius(M, model, eval_dataset, eval_A_graphs_tuple, eval_config)
+        record_tb_spectral_radius(M, model, eval_dataset, eval_A_graphs_tuple, eval_config, writer, batch)
 
 
 def clone_model(model, model_config, run_config, octave):
@@ -365,7 +365,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_EVAL', se
 
     checkpoint_prefix = os.path.join(config.train_config.checkpoint_dir + '/' + run_name, 'ckpt')
     log_dir = config.train_config.tensorboard_dir + '/' + run_name
-    writer = tf.contrib.summary.create_file_writer(log_dir)
+    writer = tf.summary.create_file_writer(log_dir)
     writer.set_as_default()
 
     for run in range(config.train_config.num_runs):
@@ -378,7 +378,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_EVAL', se
                                model, optimizer, global_step,
                                checkpoint_prefix,
                                eval_dataset, eval_A_graphs_tuple, eval_config,
-                               octave)
+                               octave, writer)
         checkpoint.save(file_prefix=checkpoint_prefix)
         writer.flush()
 
@@ -414,6 +414,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_EVAL', se
 
 
 if __name__ == '__main__':
+    # tf.debugging.set_log_device_placement(True)
     tf_config = tf.compat.v1.ConfigProto()
     tf_config.gpu_options.allow_growth = True
     tf.compat.v1.enable_eager_execution(config=tf_config)

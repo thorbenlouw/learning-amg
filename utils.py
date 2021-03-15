@@ -4,6 +4,7 @@ import os
 import glob
 from functools import lru_cache
 
+import tensorflow as tf
 import numpy as np
 from collections import Counter
 from scipy.spatial.qhull import Delaunay
@@ -52,10 +53,11 @@ def tril_indices(grid_size):
     return np.tril_indices(grid_size)
 
 
-def get_gpu_device():
-    # For now, hack to CPU
-    return ":/cpu:0"
-    # normally return ":/gpu:0"
+def get_accelerator_device():
+    gpu_devices = tf.config.list_logical_devices('GPU')
+    if len(gpu_devices) > 0:
+        return tf.device(gpu_devices[0].name)
+    return tf.device(tf.config.list_logical_devices('CPU')[0].name)
 
 
 def generate_delaunay_triangulation(k):

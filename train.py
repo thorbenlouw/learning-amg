@@ -276,7 +276,7 @@ def clone_model(model, model_config, run_config, octave):
                                        node_indicators=run_config.node_indicators,
                                        edge_indicators=run_config.edge_indicators)
     clone(dummy_input)
-    [var_clone.assign(var_orig) for var_clone, var_orig in zip(clone.get_all_variables(), model.get_all_variables())]
+    [var_clone.assign(var_orig) for var_clone, var_orig in zip(clone.variables, model.variables)]
     return clone
 
 
@@ -338,7 +338,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_EVAL', se
 
     # fix random seeds for reproducibility
     np.random.seed(seed)
-    tf.compat.v1.random.set_random_seed(seed)
+    tf.random.set_seed(seed)
     octave = init_octave(seed)
 
     batch_size = min(config.train_config.samples_per_run, config.train_config.batch_size)
@@ -356,8 +356,8 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_EVAL', se
         raise NotImplementedError()
     else:
         model = create_model(config.model_config)
-        global_step = tf.compat.v1.train.get_or_create_global_step()
-        optimizer = tf.compat.v1.train.AdamOptimizer(learning_rate=config.train_config.learning_rate)
+        global_step = global_step = tf.Variable(1, name="global_step")
+        optimizer = tf.optimizers.Adam(learning_rate=config.train_config.learning_rate)
 
     run_name = ''.join(random.choices(string.digits, k=5))  # to make the run_name string unique
     create_results_dir(run_name)
@@ -415,8 +415,8 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_EVAL', se
 
 if __name__ == '__main__':
     # tf.debugging.set_log_device_placement(True)
-    tf_config = tf.compat.v1.ConfigProto()
-    tf_config.gpu_options.allow_growth = True
-    tf.compat.v1.enable_eager_execution(config=tf_config)
+    physical_gpu_devices = tf.config.list_physical_devices('GPU')
+    if len(physical_gpu_devices) > 0:
+        tf.config.experimental.set_memory_growth(physical_gpu_devices[0], True)
 
     fire.Fire(train)

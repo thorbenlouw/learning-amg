@@ -7,6 +7,7 @@ from data import As_poisson_grid
 from graph_net_model import EncodeProcessDecodeNonRecurrent
 from utils import get_accelerator_device
 
+
 def get_model(model_name, model_config, run_config, octave, train=False, train_config=None):
     dummy_input = As_poisson_grid(1, 7 ** 2)[0]
     checkpoint_dir = './training_dir/' + model_name
@@ -22,7 +23,6 @@ def get_model(model_name, model_config, run_config, octave, train=False, train_c
 
 def load_model(checkpoint_dir, dummy_input, model_config, run_config, octave, get_optimizer=True,
                train_config=None):
-    tf.enable_eager_execution()
     model = create_model(model_config)
 
     # we have to use the model at least once to get the list of variables
@@ -31,10 +31,10 @@ def load_model(checkpoint_dir, dummy_input, model_config, run_config, octave, ge
                                node_indicators=run_config.node_indicators,
                                edge_indicators=run_config.edge_indicators))
 
-    variables = model.get_all_variables()
+    variables = model.variables
     variables_dict = {variable.name: variable for variable in variables}
     if get_optimizer:
-        global_step = tf.train.get_or_create_global_step()
+        global_step = tf.Variable(1, name="global_step")
         decay_steps = 100
         decay_rate = 1.0
         learning_rate = tf.train.exponential_decay(train_config.learning_rate, global_step, decay_steps, decay_rate)
@@ -50,6 +50,40 @@ def load_model(checkpoint_dir, dummy_input, model_config, run_config, octave, ge
         raise RuntimeError(f'training_dir {checkpoint_dir} does not exist')
     checkpoint.restore(latest_checkpoint)
     return model, optimizer, global_step
+
+
+def make_dummy_graph_tuple(run_config) -> gn.graphs.GraphsTuple:
+    dummy_input = As_poisson_grid(1, 7 ** 2)[0]  # magic 49x49 Poisson grid?
+    return csrs_to_graphs_tuple([dummy_input], None, coarse_nodes_list=np.array([[0, 1]]),
+                                baseline_P_list=[tf.convert_to_tensor(dummy_input.toarray()[:, [0, 1]])],
+                                node_indicators=run_config.node_indicators,
+                                edge_indicators=False)
+
+
+def checkpoint_to_savedmodel(checkpoint_dir: str, savedmodel_dir: str, model_config, run_config):
+    latest_checkpoint = tf.train.latest_checkpoint(checkpoint_dir)
+    if latest_checkpoint is None:
+        raise RuntimeError(f'checkpoint dir {checkpoint_dir} does not exist')
+
+    with get_accelerator_device():
+        model = EncodeProcessDecodeNonRecurrent(
+            num_cores=model_config.mp_rounds,
+            edge_output_size=1,
+            node_output_size=1,
+            global_block=model_config.global_block,
+            latent_size=model_config.latent_size,
+            num_layers=model_config.mlp_layers,
+            concat_encoder=model_config.concat_encoder)  # This is happily a tf.Module
+
+        # we have to use the model at least once to get the list of variables
+        dummy_input: gn.graphs.GraphsTuple = make_dummy_graph_tuple(run_config)
+        model(dummy_input)  # One dummy invocation to load variables
+        variables = model.variables
+        variables_dict = {variable.name: variable for variable in variables}
+        checkpoint = tf.train.Checkpoint(**variables_dict)
+        checkpoint.restore(latest_checkpoint).expect_partial()
+        tf.saved_model.save(model, savedmodel_dir)  # signatures and options???
+        print("OK")
 
 
 def create_model(model_config):
@@ -147,7 +181,7 @@ def P_square_sparsity_pattern(P, size, coarse_nodes, octave):
     P_cols = octave.double(P_coo.col + 1)
     P_values = octave.double(P_coo.data)
     coarse_nodes = octave.double(coarse_nodes + 1)
-    rows, cols = octave.square_P(P_rows, P_cols, P_values, size, coarse_nodes,  nout=2)
+    rows, cols = octave.square_P(P_rows, P_cols, P_values, size, coarse_nodes, nout=2)
     rows = rows.reshape(rows.size, order='F') - 1
     cols = cols.reshape(cols.size, order='F') - 1
     rows, cols = rows.T[0], cols.T[0]
@@ -252,5 +286,3 @@ def graphs_tuple_to_sparse_matrices(graphs_tuple, return_nodes=False):
         return matrices, nodes_list
     else:
         return matrices
-
-

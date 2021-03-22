@@ -138,7 +138,7 @@ def test_model(model_name=None, test_config='GRAPH_LAPLACIAN_TEST', seed=1):
 
     # fix random seeds for reproducibility
     np.random.seed(seed)
-    tf.random.set_random_seed(seed)
+    tf.random.set_seed(seed)
     octave = init_octave(seed)
 
     test_config = getattr(configs, test_config).test_config
@@ -156,8 +156,8 @@ def test_model(model_name=None, test_config='GRAPH_LAPLACIAN_TEST', seed=1):
 
 
 if __name__ == '__main__':
-    config = tf.ConfigProto()
-    config.gpu_options.allow_growth = True
-    tf.enable_eager_execution(config=config)
+    physical_gpu_devices = tf.config.list_physical_devices('GPU')
+    if len(physical_gpu_devices) > 0:
+        tf.config.experimental.set_memory_growth(physical_gpu_devices[0], True)
 
     fire.Fire(test_model)

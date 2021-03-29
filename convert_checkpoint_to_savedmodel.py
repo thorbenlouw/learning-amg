@@ -1,15 +1,16 @@
-import fire
-
-import tensorflow as tf
-import configs
-import os
-from model import checkpoint_to_savedmodel, get_model, graphs_tuple_to_sparse_matrices
-import numpy as np
-from utils import init_octave
 import json
+import os
 import shutil
-import sonnet as snt
+
+import fire
 import graph_nets as gn
+import numpy as np
+import sonnet as snt
+import tensorflow as tf
+
+import configs
+from amg.model import get_model, graphs_tuple_to_sparse_matrices
+from utils import init_octave
 
 
 def convert(model_name='47887', config='GRAPH_LAPLACIAN_EVAL', checkpoint_dir=None, savedmodel_dir=None):
@@ -66,7 +67,6 @@ def convert(model_name='47887', config='GRAPH_LAPLACIAN_EVAL', checkpoint_dir=No
     options = tf.saved_model.SaveOptions(function_aliases={
         'predict_prolongation': to_save.predict_prolongation,
     })
-    # tf.saved_model.save(to_save, savedmodel_dir, signatures, options)  # signatures and options???
     tf.saved_model.save(to_save, savedmodel_dir)
 
     print("Saved OK. Testing a load and inference....")
@@ -332,12 +332,11 @@ def test_inference(savedmodel_dir=None):
     num_node_features = 2
     num_edge_features = 3
 
-
     def rnd_is_a_C_node():
-        if np.random.rand() <= 0.5: # is a C-Node
+        if np.random.rand() <= 0.5:  # is a C-Node
             return np.array([1., 0.]).astype(np.float64)
-        else:# is not a C-Node
-            return np.array([0,1]).astype(np.float64)
+        else:  # is not a C-Node
+            return np.array([0, 1]).astype(np.float64)
 
     def rnd_is_part_of_sparsity_pattern(A_ij_val):
         if np.random.rand() <= 0.5:  # is part of sparsity pattern
@@ -347,7 +346,6 @@ def test_inference(savedmodel_dir=None):
 
     def rnd_A_ij():
         return np.random.rand() * 100
-
 
     _globals = []
     _nodes = np.random.rand(num_nodes, num_node_features).astype(np.float64)
@@ -363,11 +361,12 @@ def test_inference(savedmodel_dir=None):
     _senders = np.array([a for (a, b) in edge_defs.keys()])
     _receivers = np.array([b for (a, b) in edge_defs.keys()])
 
-    print("globals:\n", _globals)
     print("nodes:\n", _nodes)
     print("edges:\n", _edges)
     print("senders:\n", _senders)
     print("receivers:\n", _receivers)
+
+    _globals = np.array([], dtype=np.float64)
 
     result = loaded.predict_prolongation(
         _globals,
@@ -376,11 +375,22 @@ def test_inference(savedmodel_dir=None):
         _senders,
         _receivers)
 
+    input = gn.utils_tf.data_dicts_to_graphs_tuple([{
+        "globals": _globals,
+        "nodes": _nodes,
+        "edges": _edges,
+        "senders": _senders,
+        "receivers": _receivers,
+    }])
+    print("Input")
+    print(tf.sparse.to_dense(graphs_tuple_to_sparse_matrices(input)[0]).numpy())
+
     print_graphs_tuple(result)
 
-    for i, x in enumerate(graphs_tuple_to_sparse_matrices(result)):
-        print(gn.graphs.ALL_FIELDS[i])
-        print(tf.sparse.to_dense(x).numpy())
+    bla = graphs_tuple_to_sparse_matrices(result)
+
+    print("Output")
+    print(tf.sparse.to_dense(graphs_tuple_to_sparse_matrices(result)[0]).numpy())
 
 
 if __name__ == '__main__':

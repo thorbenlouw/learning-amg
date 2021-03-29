@@ -1,4 +1,5 @@
 import json
+import os
 from functools import partial
 
 import fire
@@ -6,12 +7,13 @@ import numpy as np
 import tensorflow as tf
 from tqdm import tqdm
 
-import configs
-from data import generate_A
-from model import get_model
-from prolongation_functions import model, baseline
-from ruge_stuben_custom_solver import ruge_stuben_custom_solver
-from utils import init_octave
+from amg import configs
+from amg.data import generate_A
+from amg.model import get_model
+from amg.prolongation_functions import model_to_prolongation_matrix, baseline
+from amg.ruge_stuben_custom_solver import ruge_stuben_custom_solver
+from amg.utils import init_octave
+
 
 def create_test_data_dir_if_not_exist():
     try:
@@ -21,7 +23,7 @@ def create_test_data_dir_if_not_exist():
 
 
 def test_size(model_name, graph_model, size, test_config, run_config, octave):
-    model_prolongation = partial(model, graph_model=graph_model,
+    model_prolongation = partial(model_to_prolongation_matrix, graph_model=graph_model,
                                  normalize_rows_by_node=run_config.normalize_rows_by_node,
                                  edge_indicators=run_config.edge_indicators,
                                  node_indicators=run_config.node_indicators,
@@ -107,7 +109,7 @@ def test_size(model_name, graph_model, size, test_config, run_config, octave):
     baseline_errors_div_diff_std = np.std(baseline_errors_div_diff)
 
     if type(splitting) == tuple:
-        splitting_str = splitting[0] + '_'+ '_'.join([f'{key}_{value}' for key, value in splitting[1].items()])
+        splitting_str = splitting[0] + '_' + '_'.join([f'{key}_{value}' for key, value in splitting[1].items()])
     else:
         splitting_str = splitting
     results_file = open(

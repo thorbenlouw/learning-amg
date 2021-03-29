@@ -92,5 +92,5 @@ def init_octave(seed):
     octave.eval(f'rand("seed", {seed})')
     octave.eval(f'randn("seed", {seed})')
     octave.eval('pkg load statistics')
-    octave.addpath(os.curdir)
+    octave.addpath(os.curdir + os.pathsep + 'amg')
     return octave

@@ -4,7 +4,6 @@ import random
 import string
 
 import fire
-
 import numpy as np
 import pyamg
 import tensorflow as tf
@@ -12,14 +11,15 @@ from pyamg.classical import direct_interpolation
 from scipy.sparse import csr_matrix
 from tqdm import tqdm
 
-import configs
-from data import generate_A
-from dataset import DataSet
-from model import csrs_to_graphs_tuple, create_model, graphs_tuple_to_sparse_matrices, to_prolongation_matrix_tensor
-from multigrid_utils import block_diagonalize_A_single, block_diagonalize_P, two_grid_error_matrices, frob_norm, \
+from amg import configs
+from amg.data import generate_A
+from amg.dataset import DataSet
+from amg.model import csrs_to_graphs_tuple, create_model, graphs_tuple_to_sparse_matrices, to_prolongation_matrix_tensor
+from amg.multigrid_utils import block_diagonalize_A_single, block_diagonalize_P, two_grid_error_matrices, frob_norm, \
     two_grid_error_matrix, compute_coarse_A
-from relaxation import relaxation_matrices
-from utils import create_results_dir, write_config_file, most_frequent_splitting, chunks, get_accelerator_device, init_octave
+from amg.relaxation import relaxation_matrices
+from amg.utils import create_results_dir, write_config_file, most_frequent_splitting, chunks, get_accelerator_device, \
+    init_octave
 
 
 def create_data_dir_if_not_exist():
@@ -164,6 +164,34 @@ def save_model_and_optimizer(checkpoint_prefix, model, optimizer, global_step):
     checkpoint.save(file_prefix=checkpoint_prefix)
     return checkpoint
 
+#
+# @tf.function
+# def train_step(batch):
+#     batch_A_graphs_tuple = csrs_to_graphs_tuple(batch.As, octave,
+#                                                 coarse_nodes_list=batch_dataset.coarse_nodes_list,
+#                                                 baseline_P_list=batch_dataset.baseline_P_list,
+#                                                 node_indicators=config.run_config.node_indicators,
+#                                                 edge_indicators=config.run_config.edge_indicators)
+#
+#     with tf.GradientTape() as tape:
+#         with get_accelerator_device():
+#             batch_P_graphs_tuple = model(batch_A_graphs_tuple)
+#             frob_loss, M = loss(batch, batch_A_graphs_tuple, batch_P_graphs_tuple,
+#                                 config.run_config, config.train_config, config.data_config)
+#
+#     print(f"frob loss: {frob_loss.numpy()}")
+#     save_every = max(1000 // len(batch), 1)
+#     if batch % save_every == 0:
+#         checkpoint = save_model_and_optimizer(checkpoint_prefix, model, optimizer, global_step)
+#
+#     # we don't call .get_variables() because the model is Sequential/custom,
+#     # see docs for Sequential.get_variables()
+#     variables = model.variables
+#     grads = tape.gradient(frob_loss, variables)
+#
+#     global_step.assign_add(batch_size)  # apply_gradients increments global_step by 1
+#     optimizer.apply_gradients(zip(grads, variables))
+#
 
 def train_run(run_dataset, run, batch_size, config,
               model, optimizer, global_step, checkpoint_prefix,
@@ -189,8 +217,8 @@ def train_run(run_dataset, run, batch_size, config,
         with tf.GradientTape() as tape:
             with get_accelerator_device():
                 batch_P_graphs_tuple = model(batch_A_graphs_tuple)
-            frob_loss, M = loss(batch_dataset, batch_A_graphs_tuple, batch_P_graphs_tuple,
-                                config.run_config, config.train_config, config.data_config)
+                frob_loss, M = loss(batch_dataset, batch_A_graphs_tuple, batch_P_graphs_tuple,
+                                    config.run_config, config.train_config, config.data_config)
 
         print(f"frob loss: {frob_loss.numpy()}")
         save_every = max(1000 // batch_size, 1)
@@ -202,9 +230,8 @@ def train_run(run_dataset, run, batch_size, config,
         variables = model.variables
         grads = tape.gradient(frob_loss, variables)
 
-        global_step.assign_add(batch_size - 1)  # apply_gradients increments global_step by 1
-        optimizer.apply_gradients(zip(grads, variables),
-                                  global_step=global_step)
+        global_step.assign_add(batch_size)  # apply_gradients increments global_step by 1
+        optimizer.apply_gradients(zip(grads, variables))
 
         record_tb(M, run, num_As, batch, batch_size, frob_loss, grads, loop, model,
                   variables, eval_dataset, eval_A_graphs_tuple, eval_config, writer)

@@ -11,7 +11,8 @@ def relaxation_matrices(As, tensor=False):
     grid_sizes = [A.shape[0] for A in As]
     Bs = [A.toarray() for A in As]
     for B, grid_size in zip(Bs, grid_sizes):
-        B[utils.tril_indices(grid_size)[0], utils.tril_indices(grid_size)[1]] = 0.  # B is the upper part of A
+        tril_rows, tril_cols = utils.tril_indices(grid_size)
+        B[tril_rows, tril_cols] = 0.  # B is the upper part of A
     res = []
     if tensor:
         for i in range(num_As):

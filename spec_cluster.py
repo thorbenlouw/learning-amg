@@ -7,12 +7,13 @@ import tensorflow as tf
 from scipy.sparse.linalg import lobpcg
 from tqdm import tqdm
 
-import configs
-from data import generate_A_spec_cluster
-from model import get_model
-from prolongation_functions import model, baseline
-from ruge_stuben_custom_solver import ruge_stuben_custom_solver
-from utils import oct2py
+from amg import configs
+from amg.data import generate_A_spec_cluster
+from amg.model import get_model
+from amg.prolongation_functions import model_to_prolongation_matrix, baseline
+from amg.ruge_stuben_custom_solver import ruge_stuben_custom_solver
+from amg.utils import init_octave
+
 
 def precond_test(model_name=None, test_config='GRAPH_LAPLACIAN_TEST', seed=1):
     if model_name is None:
@@ -42,7 +43,7 @@ def precond_test(model_name=None, test_config='GRAPH_LAPLACIAN_TEST', seed=1):
     gamma = None
     distribution = 'moons'
 
-    model_prolongation = partial(model, graph_model=graph_model, normalize_rows_by_node=False,
+    model_prolongation = partial(model_to_prolongation_matrix, graph_model=graph_model, normalize_rows_by_node=False,
                                  octave=octave)
     baseline_prolongation = baseline
 

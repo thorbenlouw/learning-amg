@@ -3,9 +3,9 @@ import numpy as np
 from pyamg import ruge_stuben_solver, smoothed_aggregation_solver, rootnode_solver
 from tqdm import tqdm
 
-import configs
-from cr_solver import cr_solver
-from data import generate_A
+from amg import configs
+from amg.cr_solver import cr_solver
+from amg.data import generate_A
 
 
 def test_size(size, test_config):
@@ -103,7 +103,8 @@ def test_size(size, test_config):
     else:
         splitting_str = splitting
     results_file = open(
-        f"results/baseline/{dist}_{num_unknowns}_cycle_{cycle}_max_levels_{max_levels}_split_{splitting_str}_results.txt", 'w')
+        f"results/baseline/{dist}_{num_unknowns}_cycle_{cycle}_max_levels_{max_levels}_split_{splitting_str}_results.txt",
+        'w')
     print(f"cycle: {cycle}, max levels: {max_levels}", file=results_file)
 
     print(f"asymptotic error factor baseline: {baseline_errors_div_diff_mean:.4f} ± {baseline_errors_div_diff_std:.5f}",

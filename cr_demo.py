@@ -2,8 +2,8 @@ import numpy as np
 import pyamg
 import matplotlib.pyplot as plt
 
-from configs import CR_TEST
-from cr_solver import cr_solver
+from amg.configs import CR_TEST
+from amg.cr_solver import cr_solver
 
 size = 33**2
 grid_size = int(np.sqrt(size))

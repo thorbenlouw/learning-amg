@@ -15,8 +15,8 @@ def graphs_tuple_to_csr(graphs_tuple):
     return csr_matrix((data, (row_indices, col_indices)), shape=shape)
 
 
-def model(A, coarse_nodes, baseline_P, C, graph_model, octave=None, normalize_rows_by_node=False,
-          edge_indicators=True, node_indicators=True):
+def model_to_prolongation_matrix(A, coarse_nodes, baseline_P, C, graph_model, octave=None, normalize_rows_by_node=False,
+                                 edge_indicators=True, node_indicators=True):
     with get_accelerator_device():
         graphs_tuple = csrs_to_graphs_tuple([A], octave, coarse_nodes_list=[coarse_nodes],
                                             baseline_P_list=[baseline_P],

@@ -1,7 +1,7 @@
 import graph_nets as gn
 import numpy as np
 import tensorflow as tf
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, coo_matrix
 
 from data import As_poisson_grid
 from graph_net_model import EncodeProcessDecodeNonRecurrent
@@ -175,7 +175,7 @@ def csrs_to_graphs_tuple(csrs, octave, node_feature_size=128, coarse_nodes_list=
     return graphs_tuple
 
 
-#TODO really need to test that this does the same thing!
+# TODO really need to test that this does the same thing!
 def P_square_sparsity_pattern(P, size, coarse_nodes, octave):
     # if size < 100:
     #     P_dense = np.zeros(P.shape)
@@ -186,6 +186,18 @@ def P_square_sparsity_pattern(P, size, coarse_nodes, octave):
     #     mask[:, coarse_nodes] = True
     #     P_sparse = P_dense[mask].tocoo()
     #     return P_sparse.row, P_sparse.col
+
+    def do_fast_dense_for_small_matrix():
+        size_diff = tuple((0, i - j) for i, j in zip((size, size), P.shape))
+        sparsity = np.pad((P != 0.).todense(), size_diff).astype(float) if P.shape != (size, size) else (P != 0).to_dense().astype(float)
+        mask = np.zeros(shape=(size, size), dtype=np.bool)
+        mask[:, coarse_nodes] = 1
+        sparsity = sparsity * mask
+        as_coo = coo_matrix(sparsity)
+        return as_coo.row, as_coo.col
+
+    if size < 6000:
+        return do_fast_dense_for_small_matrix()
 
     # If coarse nodes are in a sizexsize shape, which are non-zero (as per P)?
     # Needs to scale to very large, so keep sparse
@@ -210,7 +222,7 @@ def P_square_sparsity_pattern(P, size, coarse_nodes, octave):
                 cols.append(c)
         return rows, cols
 
-    r, c = python_square_P()
+    return python_square_P()
     # P_coo = P.tocoo()
     # P_rows = octave.double(P_coo.row + 1)
     # P_cols = octave.double(P_coo.col + 1)
@@ -221,7 +233,6 @@ def P_square_sparsity_pattern(P, size, coarse_nodes, octave):
     # cols = cols.reshape(cols.size, order='F') - 1  # It's already a 1D byt is (X,1) and we want it dimensionless (X,)
     # rows, cols = rows.T, cols.T  # WHY?! the [0]?! Mistak?! REMOVE?? Why would we just want the 1x1?
     # return rows, cols
-    return r,c
 
 
 def graphs_tuple_to_sparse_tensor(graphs_tuple):

@@ -106,6 +106,9 @@ GRAPH_LAPLACIAN_ROOTNODE_TEST.test_config.splitting = 'rootnode'
 
 GRAPH_LAPLACIAN_TRAIN = Config()
 GRAPH_LAPLACIAN_TRAIN.data_config.dist = 'lognormal_laplacian_periodic'
+# GRAPH_LAPLACIAN_TRAIN.data_config.dist = 'aniso'
+# GRAPH_LAPLACIAN_TRAIN.data_config.block_periodic = False
+
 
 GRAPH_LAPLACIAN_ABLATION_MP2 = Config()
 GRAPH_LAPLACIAN_ABLATION_MP2.data_config.dist = 'lognormal_laplacian_periodic'

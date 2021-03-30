@@ -371,7 +371,12 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_EVAL', se
     batch_size = min(config.train_config.samples_per_run, config.train_config.batch_size)
 
     # we measure the performance of the model over time on one larger instance that is not optimized for
+    import time
+
+    tic = time.thread_time()
     eval_dataset = create_dataset(1, eval_config.data_config)
+    toc = time.thread_time()
+    print("Time spent creating eval data set: {}".format(toc - tic))
     eval_A_graphs_tuple = csrs_to_graphs_tuple(eval_dataset.As, octave,
                                                coarse_nodes_list=eval_dataset.coarse_nodes_list,
                                                baseline_P_list=eval_dataset.baseline_P_list,
@@ -400,6 +405,8 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_EVAL', se
         # at the loop we only slice batches and convert to tensors
         run_dataset = create_dataset(config.train_config.samples_per_run, config.data_config,
                                      run=run, octave=octave)
+        toc = time.thread_time()
+        print("Time spent creating training batch dataset: {}".format(toc - tic))
 
         checkpoint = train_run(run_dataset, run, batch_size, config,
                                model, optimizer, global_step,
@@ -413,8 +420,10 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_EVAL', se
         old_model = clone_model(model, config.model_config, config.run_config, octave)
 
         for run in range(config.train_config.num_runs):
+            tic = time.thread_time()
             run_dataset = create_dataset(config.train_config.samples_per_run, config.data_config,
                                          run=run, octave=octave)
+            toc = time.thread_time()
 
             fine_data_config = copy.deepcopy(config.data_config)
             # RS coarsens to roughly 1/3 of the size of the grid, CLJP to roughly 1/2

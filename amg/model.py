@@ -175,17 +175,53 @@ def csrs_to_graphs_tuple(csrs, octave, node_feature_size=128, coarse_nodes_list=
     return graphs_tuple
 
 
+#TODO really need to test that this does the same thing!
 def P_square_sparsity_pattern(P, size, coarse_nodes, octave):
-    P_coo = P.tocoo()
-    P_rows = octave.double(P_coo.row + 1)
-    P_cols = octave.double(P_coo.col + 1)
-    P_values = octave.double(P_coo.data)
-    coarse_nodes = octave.double(coarse_nodes + 1)
-    rows, cols = octave.square_P(P_rows, P_cols, P_values, size, coarse_nodes, nout=2)
-    rows = rows.reshape(rows.size, order='F') - 1
-    cols = cols.reshape(cols.size, order='F') - 1
-    rows, cols = rows.T[0], cols.T[0]
-    return rows, cols
+    # if size < 100:
+    #     P_dense = np.zeros(P.shape)
+    #     P.toarray(out=P_dense)
+    #     P_dense = P_dense.copy()
+    #     P_dense.resize((size, size), refcheck=False)
+    #     mask = np.zeros((size, size), dtype=np.bool)
+    #     mask[:, coarse_nodes] = True
+    #     P_sparse = P_dense[mask].tocoo()
+    #     return P_sparse.row, P_sparse.col
+
+    # If coarse nodes are in a sizexsize shape, which are non-zero (as per P)?
+    # Needs to scale to very large, so keep sparse
+
+    def python_square_P():
+        # % Find out how many rows and cols our matrix will have
+        # %% num_rows is total_size
+        # %% num_cols is the number of columns in coarse_nodes
+        # % Create a sparse matrix P of size (num_rows,num_cols).
+        # %% row indices are in P_rows
+        # %% col indicides are in P_cols
+        # %% values are in P_values
+        # % Create a sparse matrix P_square of num_rows x num_rows
+        # % Set P_square's coarse nodes locations to P's vals
+        # %% Return the locations of non-zero elems in P_square (sparsity pattern)
+        P_coo = P.tocoo()
+        rows = []
+        cols = []
+        for r, c, v in zip(P_coo.row, P_coo.col, P_coo.data):
+            if c in coarse_nodes:
+                rows.append(r)
+                cols.append(c)
+        return rows, cols
+
+    r, c = python_square_P()
+    # P_coo = P.tocoo()
+    # P_rows = octave.double(P_coo.row + 1)
+    # P_cols = octave.double(P_coo.col + 1)
+    # P_values = octave.double(P_coo.data)
+    # coarse_nodes = octave.double(coarse_nodes + 1)
+    # rows, cols = octave.square_P(P_rows, P_cols, P_values, size, coarse_nodes, nout=2)
+    # rows = rows.reshape(rows.size, order='F') - 1  # -1 becauase Matlab 1 indexed
+    # cols = cols.reshape(cols.size, order='F') - 1  # It's already a 1D byt is (X,1) and we want it dimensionless (X,)
+    # rows, cols = rows.T, cols.T  # WHY?! the [0]?! Mistak?! REMOVE?? Why would we just want the 1x1?
+    # return rows, cols
+    return r,c
 
 
 def graphs_tuple_to_sparse_tensor(graphs_tuple):

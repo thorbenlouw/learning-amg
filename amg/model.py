@@ -6,6 +6,9 @@ from scipy.sparse import csr_matrix, coo_matrix
 from data import As_poisson_grid
 from graph_net_model import EncodeProcessDecodeNonRecurrent
 from utils import get_accelerator_device
+from numba import jit
+
+from typing import Tuple
 
 
 def get_model(model_name, model_config, run_config, octave, train=False, train_config=None):
@@ -176,6 +179,41 @@ def csrs_to_graphs_tuple(csrs, octave, node_feature_size=128, coarse_nodes_list=
 
 
 # TODO really need to test that this does the same thing!
+
+# @jit(nopython=True, parallel=True)
+def do_fast_dense_for_small_matrix(P: np.ndarray, size: int, coarse_nodes: np.array) -> Tuple[np.array, np.array]:
+    size_diff = ((0, size - P.shape[0]), (0, size - P.shape[1]))
+    sparsity = np.pad((P != 0.).todense(), size_diff).astype(float) if P.shape != (size, size) else (
+            P != 0).to_dense().astype(float)
+    mask = np.zeros(shape=(size, size), dtype=np.bool)
+    mask[:, coarse_nodes] = 1
+    sparsity = (sparsity * mask).astype(np.int8)
+    as_coo = coo_matrix(sparsity)
+    return as_coo.row, as_coo.col
+
+
+# @jit(nopython=True, parallel=True)
+def python_square_P(P: np.ndarray, coarse_nodes: np.array) -> Tuple[np.array, np.array]:
+    # % Find out how many rows and cols our matrix will have
+    # %% num_rows is total_size
+    # %% num_cols is the number of columns in coarse_nodes
+    # % Create a sparse matrix P of size (num_rows,num_cols).
+    # %% row indices are in P_rows
+    # %% col indicides are in P_cols
+    # %% values are in P_values
+    # % Create a sparse matrix P_square of num_rows x num_rows
+    # % Set P_square's coarse nodes locations to P's vals
+    # %% Return the locations of non-zero elems in P_square (sparsity pattern)
+    P_coo = P.tocoo()
+    rows = []
+    cols = []
+    for r, c, v in zip(P_coo.row, P_coo.col, P_coo.data):
+        if c in coarse_nodes:
+            rows.append(r)
+            cols.append(c)
+    return rows, cols
+
+
 def P_square_sparsity_pattern(P, size, coarse_nodes, octave):
     # if size < 100:
     #     P_dense = np.zeros(P.shape)
@@ -187,40 +225,11 @@ def P_square_sparsity_pattern(P, size, coarse_nodes, octave):
     #     P_sparse = P_dense[mask].tocoo()
     #     return P_sparse.row, P_sparse.col
 
-    def do_fast_dense_for_small_matrix():
-        size_diff = tuple((0, i - j) for i, j in zip((size, size), P.shape))
-        sparsity = np.pad((P != 0.).todense(), size_diff).astype(float) if P.shape != (size, size) else (P != 0).to_dense().astype(float)
-        mask = np.zeros(shape=(size, size), dtype=np.bool)
-        mask[:, coarse_nodes] = 1
-        sparsity = sparsity * mask
-        as_coo = coo_matrix(sparsity)
-        return as_coo.row, as_coo.col
-
     if size < 6000:
-        return do_fast_dense_for_small_matrix()
+        return do_fast_dense_for_small_matrix(P, size, coarse_nodes)
 
     # If coarse nodes are in a sizexsize shape, which are non-zero (as per P)?
     # Needs to scale to very large, so keep sparse
-
-    def python_square_P():
-        # % Find out how many rows and cols our matrix will have
-        # %% num_rows is total_size
-        # %% num_cols is the number of columns in coarse_nodes
-        # % Create a sparse matrix P of size (num_rows,num_cols).
-        # %% row indices are in P_rows
-        # %% col indicides are in P_cols
-        # %% values are in P_values
-        # % Create a sparse matrix P_square of num_rows x num_rows
-        # % Set P_square's coarse nodes locations to P's vals
-        # %% Return the locations of non-zero elems in P_square (sparsity pattern)
-        P_coo = P.tocoo()
-        rows = []
-        cols = []
-        for r, c, v in zip(P_coo.row, P_coo.col, P_coo.data):
-            if c in coarse_nodes:
-                rows.append(r)
-                cols.append(c)
-        return rows, cols
 
     return python_square_P()
     # P_coo = P.tocoo()

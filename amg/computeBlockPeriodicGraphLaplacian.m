@@ -10,6 +10,7 @@ B = sparse(9*k,9*k);
 % Only part of it will be used
 R = -lognrnd(0,1,k,9*k);
 
+
 tri = sort(tri,2);
 for i = 1:length(tri) % Run over all the triangles
 	t = tri(i,:); % For convenience, store triangle i in array t
@@ -25,7 +26,6 @@ end
 % Plug the rows of B corresponding to the (2,2) block into A in the proper places,
 % given that B has 3 by 3 blocks, while A has b by b blocks. This will
 % define the (2,2) block of A
-
 A((b+1)*k+1:(b+2)*k,1:3*k) = B((3+1)*k+1:(3+2)*k,1:3*k);
 A((b+1)*k+1:(b+2)*k,b*k+1:(b+3)*k) = B((3+1)*k+1:(3+2)*k,3*k+1:(3+3)*k);
 A((b+1)*k+1:(b+2)*k,2*b*k+1:(2*b+3)*k) = B((3+1)*k+1:(3+2)*k,2*3*k+1:(2*3+3)*k);
@@ -97,7 +97,6 @@ end
 for i = 1:length(A)
 	A(i,i) = -sum(A(i,:));
 end
-
 % Python Matlab engine does not support sparse arrays BUT OCTAVE DOES!
 %A = full(A);
 end

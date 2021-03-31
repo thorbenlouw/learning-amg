@@ -9,6 +9,8 @@ from scipy.sparse import csr_matrix
 from oct2py import octave
 from utils import chunks, most_frequent_splitting, generate_delaunay_triangulation, init_octave
 
+from block_periodic import compute_block_periodic
+
 
 def frob_norm(a, power=1):
     if power == 1:
@@ -258,7 +260,22 @@ def generate_A_delaunay_block_periodic_lognormal(num_unknowns_per_block, root_nu
     # points are correct only for 3x3 number of blocks
     tri = generate_delaunay_triangulation(num_unknowns_per_block)
     connectivity_list = tri.simplices + 1
+
+    from time import thread_time
+
+    tic_octave = thread_time()
+
     A = octave.computeBlockPeriodicGraphLaplacian(connectivity_list, num_unknowns_per_block, root_num_blocks)
+
+    toc_octave = thread_time()
+
+    tic_python = thread_time()
+    A_test = compute_block_periodic(connectivity_list, num_unknowns_per_block, root_num_blocks)
+    toc_python = thread_time()
+
+    diffs = (toc_octave - tic_octave, toc_python - tic_python)
+    print("Compute block periodic timing: Octave {}, Scipy {}".format(diffs[0], diffs[1]))
+
     return csr_matrix(A), tri.points
 
 

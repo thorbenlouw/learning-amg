@@ -404,7 +404,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_EVAL', se
         # we create the data before the training loop starts for efficiency,
         # at the loop we only slice batches and convert to tensors
         run_dataset = create_dataset(config.train_config.samples_per_run, config.data_config,
-                                     run=run, octave=octave)
+                                     run=run, octave=None)
         toc = time.thread_time()
         print("Time spent creating training batch dataset: {}".format(toc - tic))
 
@@ -412,7 +412,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_EVAL', se
                                model, optimizer, global_step,
                                checkpoint_prefix,
                                eval_dataset, eval_A_graphs_tuple, eval_config,
-                               octave, writer)
+                               None, writer)
         checkpoint.save(file_prefix=checkpoint_prefix)
         writer.flush()
 
@@ -422,7 +422,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_EVAL', se
         for run in range(config.train_config.num_runs):
             tic = time.thread_time()
             run_dataset = create_dataset(config.train_config.samples_per_run, config.data_config,
-                                         run=run, octave=octave)
+                                         run=run, octave=None)
             toc = time.thread_time()
 
             fine_data_config = copy.deepcopy(config.data_config)
@@ -431,11 +431,11 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_EVAL', se
             fine_run_dataset = create_dataset(config.train_config.samples_per_run,
                                               fine_data_config,
                                               run=run,
-                                              octave=octave)
+                                              octave=None)
             coarse_run_dataset = create_coarse_dataset(fine_run_dataset, old_model,
                                                        config.data_config,
                                                        config.run_config,
-                                                       octave=octave)
+                                                       octave=None)
 
             combined_run_dataset = run_dataset + coarse_run_dataset
             combined_run_dataset = combined_run_dataset.shuffle()
@@ -444,7 +444,7 @@ def train(config='GRAPH_LAPLACIAN_TRAIN', eval_config='GRAPH_LAPLACIAN_EVAL', se
                                    model, optimizer, global_step,
                                    checkpoint_prefix,
                                    eval_dataset, eval_A_graphs_tuple, eval_config,
-                                   octave)
+                                   None)
             checkpoint.save(file_prefix=checkpoint_prefix)
     writer.flush()
 

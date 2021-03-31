@@ -13,6 +13,8 @@ from sklearn import datasets
 from sklearn.neighbors import kneighbors_graph
 from sklearn.preprocessing import StandardScaler
 from utils import generate_delaunay_triangulation
+from block_periodic import compute_block_periodic
+
 
 def generate_A(size, dist, block_periodic, root_num_blocks, add_diag=False, octave=None):
     if dist is 'lognormal_laplacian':
@@ -205,15 +207,26 @@ def generate_A_spec_cluster(num_unknowns, add_diag=False, num_clusters=2, unit_s
         return laplacian
 
 
-
-
 def generate_A_delaunay_block_periodic_lognormal(num_unknowns_per_block, root_num_blocks, octave):
     """Poisson equation on triangular mesh, with lognormal coefficients, and block periodic boundary conditions"""
     # points are correct only for 3x3 number of blocks
     tri = generate_delaunay_triangulation(num_unknowns_per_block)
     connectivity_list = tri.simplices + 1
-    A = octave.computeBlockPeriodicGraphLaplacian(connectivity_list, num_unknowns_per_block, root_num_blocks)
-    return csr_matrix(A), tri.points
+    from time import thread_time
+    # tic_octave = thread_time()
+
+    # A = octave.computeBlockPeriodicGraphLaplacian(connectivity_list, num_unknowns_per_block, root_num_blocks)
+
+    # toc_octave = thread_time()
+
+    tic_python = thread_time()
+    A_test = compute_block_periodic(connectivity_list - 1, num_unknowns_per_block, root_num_blocks)
+    toc_python = thread_time()
+
+    # diffs = (toc_octave - tic_octave, toc_python - tic_python)
+    # print("Compute block periodic timing: Octave {}, Scipy {}".format(diffs[0], diffs[1]))
+
+    return csr_matrix(A_test), tri.points
 
 
 def As_poisson_grid(num_As, num_unknowns, constant_coefficients=False):
